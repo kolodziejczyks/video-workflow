@@ -1,0 +1,50 @@
+{
+  "music": null,
+  "subtitle_style": "reference-montra",
+  "status": "montage_review_pending",
+  "name": "current-caption-draft",
+  "clips": [
+    {
+      "in": 0,
+      "source": "IMG_1449.MOV",
+      "out": 4.64,
+      "reason": "Complete question hook"
+    },
+    {
+      "in": 0.1,
+      "source": "IMG_1455.MOV",
+      "out": 5.94,
+      "reason": "Complete explanation take; AI product name requires review"
+    },
+    {
+      "in": 0,
+      "source": "IMG_1456.MOV",
+      "out": 6.8,
+      "reason": "Complete consequence sentence"
+    },
+    {
+      "in": 0,
+      "source": "IMG_1466.MOV",
+      "out": 3.84,
+      "reason": "Complete group-photo caveat"
+    },
+    {
+      "in": 0,
+      "source": "IMG_1469.MOV",
+      "out": 10.1,
+      "reason": "Keep full commentary sentence from longer recording"
+    },
+    {
+      "in": 10.7,
+      "source": "IMG_1469.MOV",
+      "out": 14.28,
+      "reason": "Extract complete concluding thought from longer take"
+    },
+    {
+      "in": 15.5,
+      "source": "IMG_1469.MOV",
+      "out": 17.3,
+      "reason": "Remove repeated raczej and retain recommendation"
+    }
+  ]
+}

@@ -1,34 +1,52 @@
-# Local setup checkpoint
+# Local setup and commands
 
-This is a workstation-specific prototype. No footage, generated native project, transcription model, font binary, tool binary, dependency directory or credential is committed.
+Read `AGENTS.md` and `docs/STATUS.md` first. This is a Windows workstation prototype, not a portable packaged application. Do not rebuild or overwrite the working project to re-establish setup.
 
-## CapCut MCP source
+## Runtime paths
 
-- Repository: https://github.com/AiPersonacademy/capcut-mcp
-- Tested commit: `37e526dfbe427cb71abafe08b799519e42c4105a`
-- Local checkout: `work/aiperson-capcut-mcp/`
-- Install dependencies from its package lock (the current machine used `pnpm import` followed by `pnpm install --frozen-lockfile --ignore-scripts`).
-- Apply `patches/aiperson-local-tools.patch` inside that checkout using `git apply --unidiff-zero <absolute-patch-path>` and build with its TypeScript compiler.
-- The local patch adds three MCP tools: native-template rebuilding, reference text styling, and applying a saved CapCut font. Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs`.
-- Tests and build scripts launch this server directly over stdio using its SDK client. No global MCP registration has been made.
+- Node: available as `node` in this session.
+- Bundled pnpm: `C:\Users\bezaw\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\fallback\pnpm.cmd` (use its full path if `pnpm` is not on PATH).
+- Python with Pillow: `C:\Users\bezaw\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`.
+- Transcription Python: `.venv\Scripts\python.exe`; dependencies are pinned in `requirements-transcription.lock.txt`.
+- Portable FFmpeg/ffprobe: `work\tools\ffmpeg-essentials\ffmpeg-9.0.2-essentials_build\bin\`. Downloaded from Gyan's build linked by ffmpeg.org and checksum-verified. Use this build, not CapCut's limited bundled FFmpeg. Add it only to child-process PATH.
+- Whisper small model: `work/models/`.
+- CapCut native template/project store and downloaded Montra font: exact paths are in `docs/STATUS.md`. `%LOCALAPPDATA%` can resolve inside a sandbox, so use the explicit draft-root path.
 
-The tracked patch is necessary: cloning upstream alone does not supply the tools used by the repair/style scripts. Review the source and apply the patch only to the pinned revision.
+## MCP checkout
 
-## Media and transcription dependencies
+The installed source is `work/aiperson-capcut-mcp/`, from https://github.com/AiPersonacademy/capcut-mcp at commit `37e526dfbe427cb71abafe08b799519e42c4105a`.
 
-- Working Python is bundled with the app. Its `.venv` contains `requirements-transcription.lock.txt`; the bundled Python also provides Pillow for frame/font analysis scripts.
-- Portable FFmpeg/ffprobe are under `work/tools/ffmpeg-essentials/ffmpeg-9.0.2-essentials_build/bin/`, downloaded from https://www.gyan.dev/ffmpeg/builds/ (linked by https://ffmpeg.org/download.html). The downloaded zip was checked against its published SHA-256. These tools are added only to child-process PATH values.
-- Whisper's downloaded small model is under `work/models/`.
-- Montserrat Black and its OFL license are under `work/fonts/`. Font source: https://github.com/JulietaUla/Montserrat.
+Only if the checkout is missing, clone that repository into this path and check out the pinned commit. Install its locked dependencies (`pnpm import`, then `pnpm install --frozen-lockfile --ignore-scripts`), apply the local patch, and compile. From inside the checkout:
 
-## Data needed to repeat the style experiment
+```powershell
+git apply --unidiff-zero ../../patches/aiperson-local-tools.patch
+node node_modules/typescript/bin/tsc
+```
 
-Keep recordings in ignored `samples/`. Run the inspection and transcription scripts to generate the local inputs. The experimental edit selection is currently in ignored `work/plans/full.json`; it contains selected source filenames with `in`, `out` (seconds), and `reason` fields inside a `clips` array. Keep that plan with the local footage. It is not an approved montage.
+Do not apply the patch twice. The SDK imports in our scripts require the checkout's installed `node_modules`.
 
-`plan_reference_captions.py` writes `work/reference-style/caption-plan.json`. `build_reference_style_project.mjs` creates an isolated editable draft; `--publish <build-directory>` registers a separate native-template project after the app has been closed. The current automation scripts assume Windows and several explicit paths for this workstation.
+Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs` when launching the server. Our Node entry scripts do this themselves. The patch adds native-template rebuilding, reference-text styling and saved-font application. There are 27 tools total. No global MCP registration or restart is required for these stdio scripts.
 
-## Native template and app checks
+## Current entry points
 
-The empty app-authored template is `1019` in the actual CapCut draft store. Its schema/layout is preserved by the repair helper; original media tracks are added through MCP. User-confirmed playback compatibility applies to the repaired 28-file project. It does not automatically validate new text styling, effects, transitions or exports.
+| Script | Purpose / inputs |
+| --- | --- |
+| `preflight.ps1 -DraftRoot <actual-path>` | Read-only tool and draft check; PATH-only results can miss bundled tools, and sandbox process visibility can be incomplete |
+| `inspect_samples.py --ffmpeg <exe>` | Inventory and contact sheet from `samples/` |
+| `transcribe_samples.py --ffmpeg <exe>` | Local Polish transcripts, word timings and SRT under `work/transcripts/`; reuses matching source-hash/model outputs |
+| `analyze_reference_captions.py` | Samples both `copy_` references; expects portable FFmpeg at the path above |
+| `plan_reference_captions.py --font <Montra-font-path>` | Creates caption layout using `work/plans/full.json` and transcripts; always pass Montra, since its default is the old Montserrat fallback |
+| `build_reference_style_project.mjs` | Creates a new isolated MCP project from the caption plan, then wraps it in the native template |
+| `build_reference_style_project.mjs --publish <build-dir>` | Registers a separate new project in the real CapCut store; no internal process guard, so check that CapCut is closed first |
+| `apply_saved_caption_font.mjs` | Applies the saved Montra descriptor and reflows text in the specific active project; has a process guard and full backup |
+| `capcut_native_template.mjs` | MCP helper module; not a standalone command |
 
-Never run registration while CapCut is running. Some entry scripts have process guards, but this is not enforced universally by every helper/tool. Check the process first and preserve explicit user authorization for closing it. Backups are written beside each build under ignored `work/`.
+Before planning on a fresh checkout, create `work/plans/` and copy `config/current-edit-plan.json` to `work/plans/full.json`. The tracked selection is experimental and has no montage approval. Recordings, transcripts, fonts and the native template must also exist locally.
+
+The builder's basic text-style helper still labels text with the initial Montserrat approximation; it does not propagate CapCut's saved Montra resource ID. For the existing project, use the saved-font tool. For a new project, parameterize/adapt that tool's currently hardcoded project path and seed it with a saved Montra descriptor before claiming the approved native style is reproduced. Do not rerun the builder expecting it to preserve manual changes to an existing project.
+
+## Validation and writes
+
+Use syntax checks and the upstream suite when code changes justify them. The upstream suite can be run with `node --test dist/tests/draft-builder.test.js` inside the built checkout, with portable FFmpeg/ffprobe on that child process's PATH. Its 21 tests passed; they do not establish native rendering compatibility.
+
+Before native-store writes, confirm CapCut is closed, preserve backups, and use MCP. Never stop an active editing window without explicit authorization. User feedback already confirms the active native project's playback and Montra appearance; only new changes need fresh review. Exports and publication have separate approval requirements.
