@@ -25,7 +25,7 @@ node node_modules/typescript/bin/tsc
 
 Do not apply the patch twice. The SDK imports in our scripts require the checkout's installed `node_modules`.
 
-Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs` when launching the server. Our Node entry scripts do this themselves. The patch adds native-template rebuilding, reference-text styling and saved-font application. There are 27 tools total. No global MCP registration or restart is required for these stdio scripts.
+Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs` when launching the server. Our Node entry scripts do this themselves. The patch adds native-template rebuilding, reference-text styling, saved-font application and saved-transition replication. There are 28 tools total. No global MCP registration or restart is required for these stdio scripts.
 
 ## Current entry points
 
@@ -39,6 +39,7 @@ Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mj
 | `build_reference_style_project.mjs` | Creates a new isolated MCP project from the caption plan, then wraps it in the native template |
 | `build_reference_style_project.mjs --publish <build-dir>` | Registers a separate new project in the real CapCut store; no internal process guard, so check that CapCut is closed first |
 | `apply_saved_caption_font.mjs` | Applies the saved Montra descriptor and reflows text in the specific active project; has a process guard and full backup |
+| `apply_saved_transition.mjs` | Copies the app-saved transition to remaining cuts in the active project; preserves existing instances, checks the process and makes a full backup |
 | `capcut_native_template.mjs` | MCP helper module; not a standalone command |
 
 Before planning on a fresh checkout, create `work/plans/` and copy `config/current-edit-plan.json` to `work/plans/full.json`. The tracked selection is experimental and has no montage approval. Recordings, transcripts, fonts and the native template must also exist locally.

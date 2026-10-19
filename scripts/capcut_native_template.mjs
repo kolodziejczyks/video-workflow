@@ -6,6 +6,36 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const load = async p => JSON.parse(await fs.readFile(p, 'utf8'));
 const uid = () => crypto.randomUUID().toUpperCase();
+export async function applySavedTransition({directory,backupDirectory}) {
+  const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
+  if(/CapCut\.exe/i.test(stdout))throw new Error('Close CapCut before editing transitions');
+  const config=await load(path.join(directory,'Timelines/project.json'));
+  const timelinePath=path.join(directory,'Timelines',config.main_timeline_id,'draft_content.json');
+  const draft=await load(timelinePath);
+  const tracks=draft.tracks.filter(t=>t.type==='video' && t.segments.length>1);
+  if(tracks.length!==1)throw new Error('Expected one main video track');
+  const clips=[...tracks[0].segments].sort((a,b)=>a.target_timerange.start-b.target_timerange.start);
+  const transitions=draft.materials.transitions||[];
+  const ids=new Set(clips.flatMap(s=>s.extra_material_refs||[]));
+  const templates=transitions.filter(t=>ids.has(t.id));
+  if(!templates.length || new Set(templates.map(t=>t.resource_id)).size!==1)throw new Error('Expected one saved transition type');
+  const template=templates[0];await fs.access(template.path);
+  if(!/^\d+$/.test(template.resource_id))throw new Error('Saved resource ID is not a native catalog ID');
+  await fs.mkdir(backupDirectory,{recursive:true});
+  await fs.cp(directory,path.join(backupDirectory,'project-before-transitions'),{recursive:true,errorOnExist:true,force:false});
+  let added=0,retained=0;
+  for(let i=0;i<clips.length-1;i++){
+    const seg=clips[i];
+    if(transitions.some(t=>(seg.extra_material_refs||[]).includes(t.id))){retained++;continue;}
+    if(template.duration>Math.min(seg.target_timerange.duration,clips[i+1].target_timerange.duration))throw new Error('Transition exceeds adjacent clip duration');
+    const copy=structuredClone(template);copy.id=uid();
+    transitions.push(copy);seg.extra_material_refs=[...(seg.extra_material_refs||[]),copy.id];added++;
+  }
+  draft.materials.transitions=transitions;
+  await write(path.join(directory,'draft_content.json'),draft);await write(timelinePath,draft);
+  return {name:template.name,resourceId:template.resource_id,durationSeconds:template.duration/1e6,
+    retained,added,cutCount:clips.length-1,backupDirectory};
+}
 export async function useSavedFont({directory,fontPath,layoutPath,backupDirectory}) {
   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
   if(/CapCut\.exe/i.test(stdout)) throw new Error('Close CapCut before applying the saved font');

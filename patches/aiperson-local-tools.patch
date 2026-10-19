@@ -1,5 +1,5 @@
 diff --git a/src/index.ts b/src/index.ts
-index 7afd711..09b7262 100644
+index 7afd711..afb2d57 100644
 --- a/src/index.ts
 +++ b/src/index.ts
 @@ -854,0 +855,33 @@ server.prompt(
@@ -36,3 +36,13 @@ index 7afd711..09b7262 100644
 +    } catch(e) {return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
 +  });
 +
+@@ -855,0 +889,9 @@ async function main() {
++  server.tool('capcut_apply_saved_transition', 'Copy an app-saved native transition to every remaining cut, preserving existing transitions and backing up the project.',
++   {directory:z.string(),backup_directory:z.string()},async ({directory,backup_directory})=>{
++    try {
++     if(!process.env.CAPCUT_NATIVE_HELPER)throw new Error('CAPCUT_NATIVE_HELPER required');
++     const helper=await import(process.env.CAPCUT_NATIVE_HELPER);
++     const result=await helper.applySavedTransition({directory,backupDirectory:backup_directory});
++     return {content:[{type:'text' as const,text:JSON.stringify(result)}]};
++    }catch(e){return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
++   });
