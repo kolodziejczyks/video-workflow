@@ -1,0 +1,25 @@
+# Local recordings and generated media
+media/
+input/
+output/
+exports/
+work/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.ssh/
+
+# Tool caches
+.venv/
+__pycache__/
+node_modules/
