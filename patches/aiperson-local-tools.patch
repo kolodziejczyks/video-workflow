@@ -1,8 +1,18 @@
 diff --git a/src/index.ts b/src/index.ts
-index 7afd711..2f8a10b 100644
+index 7afd711..09b7262 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -854,0 +855,23 @@ server.prompt(
+@@ -854,0 +855,33 @@ server.prompt(
++server.tool('capcut_use_saved_font', 'Apply the font saved on one caption to the remaining captions, backing up the project and synchronizing its native timeline.',
++ {directory:z.string(),font_path:z.string(),layout_path:z.string(),backup_directory:z.string()},
++ async ({directory,font_path,layout_path,backup_directory})=>{
++  try {
++   if(!process.env.CAPCUT_NATIVE_HELPER)throw new Error('CAPCUT_NATIVE_HELPER required');
++   const helper=await import(process.env.CAPCUT_NATIVE_HELPER);
++   const result=await helper.useSavedFont({directory,fontPath:font_path,layoutPath:layout_path,backupDirectory:backup_directory});
++   return {content:[{type:'text' as const,text:JSON.stringify(result)}]};
++  }catch(e){return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
++ });
 +server.tool('capcut_style_reference_text', 'Apply a local reference-caption font, shadow and purple active-word background to editable text materials.',
 + {directory:z.string(),font_path:z.string(),highlighted_ids:z.array(z.string())},
 + async ({directory,font_path,highlighted_ids})=>{

@@ -9,7 +9,7 @@ This is a workstation-specific prototype. No footage, generated native project, 
 - Local checkout: `work/aiperson-capcut-mcp/`
 - Install dependencies from its package lock (the current machine used `pnpm import` followed by `pnpm install --frozen-lockfile --ignore-scripts`).
 - Apply `patches/aiperson-local-tools.patch` inside that checkout using `git apply --unidiff-zero <absolute-patch-path>` and build with its TypeScript compiler.
-- The local patch adds two MCP tools: native-template rebuilding and reference text styling. Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs`.
+- The local patch adds three MCP tools: native-template rebuilding, reference text styling, and applying a saved CapCut font. Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs`.
 - Tests and build scripts launch this server directly over stdio using its SDK client. No global MCP registration has been made.
 
 The tracked patch is necessary: cloning upstream alone does not supply the tools used by the repair/style scripts. Review the source and apply the patch only to the pinned revision.

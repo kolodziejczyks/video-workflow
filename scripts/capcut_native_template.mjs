@@ -2,8 +2,52 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 const load = async p => JSON.parse(await fs.readFile(p, 'utf8'));
 const uid = () => crypto.randomUUID().toUpperCase();
+export async function useSavedFont({directory,fontPath,layoutPath,backupDirectory}) {
+  const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
+  if(/CapCut\.exe/i.test(stdout)) throw new Error('Close CapCut before applying the saved font');
+  await fs.access(fontPath);
+  const contentPath=path.join(directory,'draft_content.json');
+  const draft=await load(contentPath);
+  const sample=draft.materials.texts.find(m=>m.font_path?.replaceAll('\\','/')===fontPath.replaceAll('\\','/'));
+  if(!sample)throw new Error('No caption uses this saved font');
+  const savedFont=JSON.parse(sample.content).styles.find(s=>s.font?.path)?.font;
+  if(!savedFont)throw new Error('Saved font descriptor is missing');
+  const layout=await load(layoutPath);
+  const key=(text,start,duration)=>JSON.stringify([text,Math.round(start),Math.round(duration)]);
+  const positions=new Map(layout.entries.map(e=>[key(e.text,e.start*1e6,e.duration*1e6),e]));
+  await fs.mkdir(backupDirectory,{recursive:true});
+  await fs.cp(directory,path.join(backupDirectory,'project-before-font-change'),{recursive:true,errorOnExist:true,force:false});
+  for(const mat of draft.materials.texts){
+    const content=JSON.parse(mat.content);
+    for(const style of content.styles)style.font=structuredClone(savedFont);
+    mat.content=JSON.stringify(content);
+    mat.font_path=fontPath.replaceAll('\\','/');mat.font_name='Montra';
+    for(const field of ['font_id','font_resource_id','font_category_id','font_category_name','font_source_platform'])
+      if(field in sample)mat[field]=sample[field];
+  }
+  let positioned=0;
+  for(const [slot,track] of draft.tracks.filter(t=>t.type==='text').entries())for(const seg of track.segments){
+    const mat=draft.materials.texts.find(m=>m.id===seg.material_id);
+    const text=JSON.parse(mat.content).text;
+    const nearest=layout.entries.filter(e=>e.slot===slot && e.text===text && e.highlight===(mat.background_alpha>0))
+      .map(e=>({entry:e,error:Math.abs(e.start*1e6-seg.target_timerange.start)+Math.abs(e.duration*1e6-seg.target_timerange.duration)}))
+      .sort((a,b)=>a.error-b.error)[0];
+    const position=positions.get(key(text,seg.target_timerange.start,seg.target_timerange.duration)) ||
+      (nearest?.error<250000?nearest.entry:null);
+    if(position){seg.clip.transform.x=position.x;seg.clip.transform.y=position.y;positioned++;}
+  }
+  if(positioned!==draft.materials.texts.length)throw new Error('Some native text states could not be matched; no files were changed');
+  const config=await load(path.join(directory,'Timelines/project.json'));
+  const timelinePath=path.join(directory,'Timelines',config.main_timeline_id,'draft_content.json');
+  draft.update_time=Date.now()*1000;
+  await write(contentPath,draft);await write(timelinePath,draft);
+  return {font:'Montra',fontResourceId:sample.font_resource_id,textMaterials:draft.materials.texts.length,
+    reflowedSegments:positioned,timelineCopiesMatch:(await fs.readFile(contentPath)).equals(await fs.readFile(timelinePath)),backupDirectory};
+}
 export async function styleReferenceText({directory,fontPath,highlightedIds}) {
   const contentPath=path.join(directory,'draft_content.json');
   const draft=await load(contentPath);

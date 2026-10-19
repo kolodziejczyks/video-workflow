@@ -1,8 +1,12 @@
 import json
+import argparse
 from pathlib import Path
 from PIL import ImageFont
 root=Path(__file__).resolve().parents[1]
-font=ImageFont.truetype(str(root/'work/fonts/Montserrat-Black.ttf'),78)
+parser=argparse.ArgumentParser()
+parser.add_argument('--font',default=str(root/'work/fonts/Montserrat-Black.ttf'))
+args=parser.parse_args()
+font=ImageFont.truetype(args.font,78)
 plan=json.loads((root/'work/plans/full.json').read_text(encoding='utf-8-sig'))
 entries=[]; offset=0; groups=[]
 for clip in plan['clips']:
@@ -35,6 +39,6 @@ for clip in plan['clips']:
         groups.append({'start':start,'end':end,'text':' '.join(w['text'].strip() for w in group)})
     offset+=clip['out']-clip['in']
 out=root/'work/reference-style/caption-plan.json'
-out.write_text(json.dumps({'editPlan':plan,'fontPath':str(root/'work/fonts/Montserrat-Black.ttf'),'fontSize':9.75,
+out.write_text(json.dumps({'editPlan':plan,'fontPath':args.font,'fontSize':9.75,
                            'styleApproximation':True,'entries':entries,'groups':groups},ensure_ascii=False,indent=2),encoding='utf-8')
 print(f'{len(entries)} editable text states, {len(groups)} phrase groups; {offset:.2f}s')
