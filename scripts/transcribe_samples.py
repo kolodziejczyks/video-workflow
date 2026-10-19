@@ -9,9 +9,11 @@ from faster_whisper import WhisperModel
 parser = argparse.ArgumentParser()
 parser.add_argument('--ffmpeg', required=True)
 parser.add_argument('--model', default='small')
+parser.add_argument('--input', type=Path)
+parser.add_argument('--output', type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-out = root / 'work' / 'transcripts'
+out = args.output or root / 'work' / 'transcripts'
 out.mkdir(parents=True, exist_ok=True)
 model = WhisperModel(args.model, device='cpu', compute_type='int8', download_root=str(root / 'work' / 'models'))
 
@@ -19,8 +21,8 @@ def stamp(seconds):
     ms = round(seconds * 1000)
     return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02},{ms%1000:03}'
 
-for source in sorted((root / 'samples').glob('*')):
-    if source.suffix.lower() not in {'.mov', '.mp4', '.mkv'}:
+for source in sorted((args.input or root / 'samples').glob('*')):
+    if source.suffix.lower() not in {'.mov', '.mp4', '.mkv', '.m4v'}:
         continue
     target = out / f'{source.stem}.json'
     with source.open('rb') as stream:

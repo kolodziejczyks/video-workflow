@@ -83,14 +83,23 @@ export async function styleReferenceText({directory,fontPath,highlightedIds}) {
   const draft=await load(contentPath);
   const highlighted=new Set(highlightedIds);
   await fs.access(fontPath);
+  let saved;
+  if(process.env.CAPCUT_STYLE_SOURCE){
+    const baseline=await load(path.join(process.env.CAPCUT_STYLE_SOURCE,'draft_content.json'));
+    saved=baseline.materials.texts.find(m=>m.font_path?.replaceAll('\\','/')===fontPath.replaceAll('\\','/'));
+    if(!saved || saved.font_name!=='Montra')throw new Error('Approved Montra baseline is missing');
+  }
   for(const mat of draft.materials.texts) {
     const content=JSON.parse(mat.content);
     for(const style of content.styles) {
-      style.font={id:'',path:fontPath.replaceAll('\\','/')};
-      style.bold=true;
+      const baselineStyle=saved && JSON.parse(saved.content).styles.find(s=>s.font?.path);
+      style.font=baselineStyle?structuredClone(baselineStyle.font):{id:'',path:fontPath.replaceAll('\\','/')};
+      style.bold=baselineStyle?.bold ?? true;
     }
     mat.content=JSON.stringify(content);
-    mat.font_path=fontPath.replaceAll('\\','/');mat.font_name='Montserrat-Black';
+    mat.font_path=fontPath.replaceAll('\\','/');mat.font_name=saved?'Montra':'Montserrat-Black';
+    if(saved)for(const field of ['font_id','font_resource_id','font_category_id','font_category_name','font_source_platform'])
+      if(field in saved)mat[field]=saved[field];
     mat.has_shadow=true; mat.shadow_color='#000000';mat.shadow_alpha=0.65;
     mat.shadow_distance=3;mat.shadow_smoothing=0.4;mat.shadow_angle=-45;
     mat.text_alignment=1;mat.fixed_width=-1;mat.fixed_height=-1;

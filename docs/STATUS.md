@@ -20,6 +20,25 @@ It is a 36.6-second native 9:16 draft with seven selected video intervals, 29 ca
 
 The next unresolved creative work is montage review/refinement. Do not redo the font, infer montage approval, publish, or restart setup simply because a new agent takes over.
 
+## Next workflow: uploaded recording batches
+
+The user wants to upload recordings from their phone and trigger a script/job to generate a montage and captions. They selected **Google Drive** as the upload inbox: [vids](https://drive.google.com/drive/folders/1Gnbuq3g6SfZckD7iBWGmRWacWK0vgCnW), ID `1Gnbuq3g6SfZckD7iBWGmRWacWK0vgCnW`. Connector metadata verified it as a folder on 2026-10-19; listing returned no children. Use one subfolder per video. The user selected **React**, their own **Cloudflare** account with a supplied `workers.dev` hostname, and **Google login** allowing only `bezawka@gmail.com`.
+
+Implemented locally:
+
+- `apps/control/`: responsive React/Vite control page; signed Access JWT/email validation; D1 migrations; duplicate-protected job submission; atomic leases and job progress; machine authentication. Production fails closed until Access is configured.
+- `worker/`: local Drive desktop inbox inventory, 30-second stability check, isolated/hash-verified copies, one-worker lock, outbound polling, progress/lease renewal and processor execution. No worker service is installed.
+- `scripts/process_batch.mjs` and `scripts/plan_batch.py`: parameterized transcription/caption pipeline, conservative chronological speech selection with near-duplicate removal, staged native MCP builds, saved Montra descriptor, wait for closed CapCut and backed-up registration. Creative notes are saved but not interpreted; semantic montage and visual take ranking remain future work.
+- Setup and limitations: `docs/remote-control.md`. No media upload to Cloudflare, no exports/publishing, no reuse of interactive connector credentials. The PC uses its own Drive desktop sync.
+
+Validation: 8 API/inventory tests and 2 Python selector tests passed; React production build and Wrangler deployment dry run passed. Parameterized caption planning against the existing selection reproduced 272 states/29 groups/36.6 seconds under ignored `work/control-validation/`. No native project was modified or opened. Browser layout and new-batch native playback have not been verified.
+
+Cloudflare CLI login succeeded; database creation and web-app deployment are authorized. D1 `video-workflow` (ID `52244328-8844-41ed-ac4c-3c0c48cda29d`) is bound as `DB`; migration `0001_jobs.sql` is applied. The user configured Google login, confirmed the provider test for `bezawka@gmail.com`, and reported adding an Allow policy for only that address. They selected the custom hostname `cutroom.kolodziejczyks.pl` and supplied Access audience `393e8fab50cdf6aa3310b386da2a912c0dbec54dbdb9605663927f0d75e9629d` for team `falling-thunder-f3eb.cloudflareaccess.com`.
+
+Deployment on 2026-10-20: version `539295bf-6a70-4e94-9fa1-9c4941d4e7f2`, attached custom domain https://cutroom.kolodziejczyks.pl. Team, audience and sole-email allowlist are deployed. The old workers.dev address is disabled (HTTP 404 verified). Initial custom-hostname verification returned DNS ENOTFOUND; login redirect and full application login still need verification once DNS propagates. `WORKER_TOKEN` and machine Access credentials have not been provisioned.
+
+Next: verify custom-domain Google login, then configure machine service token/secrets, Drive desktop/local worker path and test a fresh batch end to end. Keep Google/Cloudflare secrets out of chat. The local design preview runs on port 5174 outside the sandbox; development mode shows a preview banner and does not call the unconnected API. Nine JS tests and two Python tests pass after that fix. The user reviewed the UI positively. Do not launch CapCut without the user's request. New wording/cuts and final native export still need separate review. The user authorized committing and pushing the remote-control implementation on 2026-10-20.
+
 ## Local assets and projects
 
 - Repository: `C:\code\video-workflow`; GitHub SSH origin `git@github.com:kolodziejczyks/video-workflow.git`. SSH push is verified. Use Git status/log and the remote branch to check the latest checkpoint; commit/push only when requested.
@@ -39,6 +58,8 @@ Montra font file:
 The font filename is generic; its internal family name and saved CapCut descriptor identify Montra. Do not substitute the earlier Montserrat approximation.
 
 ## Tooling facts and constraints
+
+- Matt Pocock's 27 published engineering/productivity skills are installed in `C:\Users\bezaw\.codex\skills` from commit `5beb35b040e3de97e54fa9e386d7e42d15c295c2`. Repository configuration is approved and saved in `docs/agents/`, with pointers in `AGENTS.md`: GitHub Issues, five default triage labels, single-context domain docs. GitHub label creation remains pending: the connector exposes no repository-label creation tool, `gh` is unavailable, and Git's credential helper returned no existing HTTPS credential. The user has already authorized creating missing labels; do not ask again once an authenticated route is available.
 
 - Use the local AiPersonacademy MCP checkout at pinned commit `37e526dfbe427cb71abafe08b799519e42c4105a` plus the tracked patch. It currently exposes 28 tools (24 upstream + 4 local). Scripts invoke real stdio MCP calls; there is no global MCP registration.
 - Upstream from-scratch generation was rejected by CapCut as an “unusual path”. Native-template rebuilding fixed opening/playback; use that approach. Native main-timeline and top-level content must stay synchronized.

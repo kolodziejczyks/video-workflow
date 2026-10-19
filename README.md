@@ -14,9 +14,13 @@ Cut selection and creative decisions are agent-guided. Caption wording, appearan
 
 Read [AGENTS.md](AGENTS.md), then [the current handoff](docs/STATUS.md) for the working project, approval state, and local assets. Follow [local setup](docs/local-setup.md) for tools and commands.
 
+For phone uploads, use the configured [Google Drive inbox](docs/drive-inbox.md). The [React remote control and Windows worker](docs/remote-control.md) are implemented locally; Cloudflare deployment, Google login configuration, Drive desktop sync and end-to-end batch validation remain to be completed.
+
 ## Repository layout
 
 - `scripts/` — workflow scripts and MCP clients.
+- `apps/control/` — React control page, Cloudflare API, D1 migrations and tests.
+- `worker/` — Windows batch inventory and job polling worker.
 - `patches/` — local extensions to the upstream CapCut MCP server.
 - `config/current-edit-plan.json` — the current experimental source intervals.
 - `docs/` — setup instructions and the current handoff.

@@ -1,0 +1,10 @@
+{
+  "folderId": "1Gnbuq3g6SfZckD7iBWGmRWacWK0vgCnW",
+  "folderUrl": "https://drive.google.com/drive/folders/1Gnbuq3g6SfZckD7iBWGmRWacWK0vgCnW",
+  "folderName": "vids",
+  "batchLayout": "one-subfolder-per-video",
+  "trigger": "remote-control-page-after-deployment",
+  "language": "pl",
+  "subtitleStyle": "reference-montra",
+  "output": "native-capcut-review-draft"
+}

@@ -5,12 +5,15 @@ from PIL import ImageFont
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
 parser.add_argument('--font',default=str(root/'work/fonts/Montserrat-Black.ttf'))
+parser.add_argument('--plan',type=Path,default=root/'work/plans/full.json')
+parser.add_argument('--transcripts',type=Path,default=root/'work/transcripts')
+parser.add_argument('--output',type=Path,default=root/'work/reference-style/caption-plan.json')
 args=parser.parse_args()
 font=ImageFont.truetype(args.font,78)
-plan=json.loads((root/'work/plans/full.json').read_text(encoding='utf-8-sig'))
+plan=json.loads(args.plan.read_text(encoding='utf-8-sig'))
 entries=[]; offset=0; groups=[]
 for clip in plan['clips']:
-    data=json.loads((root/'work/transcripts'/f"{Path(clip['source']).stem}.json").read_text(encoding='utf-8'))
+    data=json.loads((args.transcripts/f"{Path(clip['source']).stem}.json").read_text(encoding='utf-8'))
     words=[dict(w,start=offset+w['start']-clip['in'],end=offset+w['end']-clip['in'])
            for s in data['segments'] for w in s['words'] if w['start']>=clip['in'] and w['end']<=clip['out']]
     for first in range(0,len(words),4):
@@ -38,7 +41,8 @@ for clip in plan['clips']:
                 x+=width+24
         groups.append({'start':start,'end':end,'text':' '.join(w['text'].strip() for w in group)})
     offset+=clip['out']-clip['in']
-out=root/'work/reference-style/caption-plan.json'
+out=args.output
+out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text(json.dumps({'editPlan':plan,'fontPath':args.font,'fontSize':9.75,
                            'styleApproximation':True,'entries':entries,'groups':groups},ensure_ascii=False,indent=2),encoding='utf-8')
 print(f'{len(entries)} editable text states, {len(groups)} phrase groups; {offset:.2f}s')

@@ -9,3 +9,18 @@ Start with [the current handoff](docs/STATUS.md). Read [local setup](docs/local-
 - Keep approval scopes separate: subtitle wording, subtitle appearance, montage/cuts, and publishing. The user approved the subtitle wording and reviewed the reference-style captions with CapCut's Montra font positively. Use that caption appearance as the baseline; montage/cuts and publishing remain unapproved.
 - Avoid black fades at cut boundaries. Native transitions must use real CapCut resources; generated random effect IDs are not evidence of valid transitions.
 - Keep originals, generated projects, exports, downloaded tools/models/fonts and credentials outside Git. Publish only after explicit approval of the final export and destination.
+
+## Agent skills
+
+### Issue tracker
+
+Use GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout. Before codebase exploration, read
+`docs/agents/domain.md`.

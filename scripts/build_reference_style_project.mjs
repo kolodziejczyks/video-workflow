@@ -1,15 +1,18 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {Client} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import {StdioClientTransport} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const actual='C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft';
 const publishing=process.argv[2]==='--publish';
-const out=publishing?path.resolve(process.argv[3]):path.join(root,'work/reference-style/build-'+new Date().toISOString().replace(/[:.]/g,'-'));
+const batch=process.env.CAPCUT_BATCH_DIRECTORY;
+const out=publishing?path.resolve(process.argv[3]):batch?path.join(batch,'build'):path.join(root,'work/reference-style/build-'+new Date().toISOString().replace(/[:.]/g,'-'));
 await fs.mkdir(out,{recursive:true});
 const state=publishing?JSON.parse(await fs.readFile(path.join(out,'state.json'),'utf8')):{
-  name:'Polish Caption Style '+new Date().toISOString().replace(/[:.]/g,'-'),out,sourceDirectory:path.join(out,'drafts','CaptionSource')};
+  name:batch?'Recording Batch '+path.basename(batch):'Polish Caption Style '+new Date().toISOString().replace(/[:.]/g,'-'),out,sourceDirectory:path.join(out,'drafts','CaptionSource')};
 const drafts=publishing?actual:path.join(out,'drafts');
 await fs.mkdir(drafts,{recursive:true});
 const mediaRoot=path.join(root,'work/tools/ffmpeg-essentials');
@@ -23,11 +26,11 @@ async function call(name,args){const r=await client.callTool({name,arguments:arg
 try {
  await client.connect(transport);
  if(!publishing){
-   const plan=JSON.parse(await fs.readFile(path.join(root,'work/reference-style/caption-plan.json'),'utf8'));
+   const plan=JSON.parse(await fs.readFile(batch?path.join(batch,'caption-plan.json'):path.join(root,'work/reference-style/caption-plan.json'),'utf8'));
    await call('capcut_create_project',{name:'CaptionSource',ratio:'9:16',fps:30});
    let offset=0;
    for(const clip of plan.editPlan.clips){
-     await call('capcut_add_video_clip',{project_name_or_id:'CaptionSource',file_path:path.join(root,'samples',clip.source),
+     await call('capcut_add_video_clip',{project_name_or_id:'CaptionSource',file_path:path.join(batch?path.join(batch,'media'):path.join(root,'samples'),clip.source),
        start_time_seconds:offset,duration_seconds:clip.out-clip.in,source_start_seconds:clip.in});
      offset+=clip.out-clip.in;
    }
@@ -41,6 +44,10 @@ try {
    }
    state.style=await call('capcut_style_reference_text',{directory:state.sourceDirectory,font_path:plan.fontPath,highlighted_ids:highlights});
    state.durationSeconds=offset;
+ }
+ if(publishing){
+   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
+   if(/CapCut\.exe/i.test(stdout))throw new Error('Close CapCut before registering a new project');
  }
  const result=await call('capcut_rebuild_from_native_template',{template_directory:path.join(actual,'1019'),
    source_directory:state.sourceDirectory,name:state.name,backup_directory:path.join(out,publishing?'publish-backup':'native-backup')});

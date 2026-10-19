@@ -2,6 +2,8 @@
 
 Read `AGENTS.md` and `docs/STATUS.md` first. This is a Windows workstation prototype, not a portable packaged application. Do not rebuild or overwrite the working project to re-establish setup.
 
+For the React control page, Cloudflare deployment and Windows batch worker, see [remote control setup](remote-control.md). Existing single-project commands below remain available; the batch processor supplies isolated paths to transcription and caption planning.
+
 ## Runtime paths
 
 - Node: available as `node` in this session.
