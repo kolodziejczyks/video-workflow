@@ -1,0 +1,28 @@
+diff --git a/src/index.ts b/src/index.ts
+index 7afd711..2f8a10b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -854,0 +855,23 @@ server.prompt(
++server.tool('capcut_style_reference_text', 'Apply a local reference-caption font, shadow and purple active-word background to editable text materials.',
++ {directory:z.string(),font_path:z.string(),highlighted_ids:z.array(z.string())},
++ async ({directory,font_path,highlighted_ids})=>{
++   try {
++     if(!process.env.CAPCUT_NATIVE_HELPER) throw new Error('CAPCUT_NATIVE_HELPER required');
++     const helper=await import(process.env.CAPCUT_NATIVE_HELPER);
++     const result=await helper.styleReferenceText({directory,fontPath:font_path,highlightedIds:highlighted_ids});
++     return {content:[{type:'text' as const,text:JSON.stringify(result)}]};
++   }catch(e){return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
++ });
++server.tool('capcut_rebuild_from_native_template',
++  'Local repair extension: clone an empty native CapCut scaffold and transplant a generated timeline into it. Creates a separate project and backs up the index.',
++  { template_directory: z.string(), source_directory: z.string(), name: z.string(), backup_directory: z.string() },
++  async ({ template_directory, source_directory, name, backup_directory }) => {
++    try {
++      if (!process.env.CAPCUT_NATIVE_HELPER) throw new Error('CAPCUT_NATIVE_HELPER is required');
++      const helper = await import(process.env.CAPCUT_NATIVE_HELPER);
++      const result = await helper.rebuild({draftsDir: CapCutPathResolver.getDraftsDirectory(), templateDirectory: template_directory,
++        sourceDirectory: source_directory, name, backupDirectory: backup_directory});
++      return {content:[{type:'text' as const,text:JSON.stringify(result)}]};
++    } catch(e) {return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
++  });
++

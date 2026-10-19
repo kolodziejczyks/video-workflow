@@ -1,0 +1,108 @@
+// Local MCP extension: rebuild a generated timeline inside an actual 9.6 scaffold.
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+const load = async p => JSON.parse(await fs.readFile(p, 'utf8'));
+const uid = () => crypto.randomUUID().toUpperCase();
+export async function styleReferenceText({directory,fontPath,highlightedIds}) {
+  const contentPath=path.join(directory,'draft_content.json');
+  const draft=await load(contentPath);
+  const highlighted=new Set(highlightedIds);
+  await fs.access(fontPath);
+  for(const mat of draft.materials.texts) {
+    const content=JSON.parse(mat.content);
+    for(const style of content.styles) {
+      style.font={id:'',path:fontPath.replaceAll('\\','/')};
+      style.bold=true;
+    }
+    mat.content=JSON.stringify(content);
+    mat.font_path=fontPath.replaceAll('\\','/');mat.font_name='Montserrat-Black';
+    mat.has_shadow=true; mat.shadow_color='#000000';mat.shadow_alpha=0.65;
+    mat.shadow_distance=3;mat.shadow_smoothing=0.4;mat.shadow_angle=-45;
+    mat.text_alignment=1;mat.fixed_width=-1;mat.fixed_height=-1;
+    mat.background_color='#8000EE';mat.background_alpha=highlighted.has(mat.id)?1:0;
+    mat.background_style=highlighted.has(mat.id)?1:0;mat.background_round_radius=0.15;
+    mat.background_width=0.08;mat.background_height=0.08;
+    mat.background_horizontal_offset=0;mat.background_vertical_offset=0;
+    if(highlighted.has(mat.id))mat.check_flag|=16;
+  }
+  for(const [i,track] of draft.tracks.entries())
+    for(const seg of track.segments) {seg.track_render_index=i;seg.render_index=10000+i;}
+  await write(contentPath,draft);
+  return {textMaterials:draft.materials.texts.length,highlightedMaterials:highlighted.size};
+}
+async function write(p, value) {
+  const temp = p+'.repair.tmp';
+  await fs.writeFile(temp, JSON.stringify(value));
+  await fs.rename(temp, p);
+}
+export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, name, backupDirectory }) {
+  if (!name || /[\\/:*?"<>|]/.test(name) || name==='.' || name==='..') throw new Error('Invalid project name');
+  const template = path.resolve(templateDirectory);
+  const source = path.resolve(sourceDirectory);
+  const destination = path.join(path.resolve(draftsDir), name);
+  const native = await load(path.join(template, 'draft_content.json'));
+  if (native.tracks.some(t => t.segments?.length)) throw new Error('Use an empty native template');
+  const generated = await load(path.join(source, 'draft_content.json'));
+  const sourceMeta = await load(path.join(source, 'draft_meta_info.json'));
+  const templateMeta = await load(path.join(template, 'draft_meta_info.json'));
+  const projectConfig = await load(path.join(template, 'Timelines/project.json'));
+  try { await fs.access(destination); throw new Error('Destination exists'); } catch(e) { if (e.code!=='ENOENT') throw e; }
+  await fs.mkdir(backupDirectory, {recursive:true});
+  const rootIndex = path.join(draftsDir, 'root_meta_info.json');
+  let index;
+  try { index=await load(rootIndex); await fs.copyFile(rootIndex,path.join(backupDirectory,'root_meta_info.before.json')); }
+  catch(e) { if(e.code!=='ENOENT') throw e; index={all_draft_store:[],draft_ids:0,root_path:draftsDir}; }
+  await fs.cp(source,path.join(backupDirectory,'failed-project'),{recursive:true,errorOnExist:true,force:false});
+  const projectId = uid(), timelineId = uid(), containerId = uid();
+  const replacements = new Map([[templateMeta.draft_id,projectId],[projectConfig.main_timeline_id,timelineId],[projectConfig.id,containerId]]);
+  function remap(value) {
+    if (typeof value==='string') {
+      if (replacements.has(value)) return replacements.get(value);
+      return value.replaceAll(template.replaceAll('\\','/'),destination.replaceAll('\\','/')).replaceAll(template,destination);
+    }
+    if (Array.isArray(value)) return value.map(remap);
+    if (value && typeof value==='object') return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,remap(v)]));
+    return value;
+  }
+  await fs.cp(template,destination,{recursive:true,errorOnExist:true,force:false,filter:p=>path.basename(p)!=='.locked'});
+  async function remapJson(dir) {
+    for(const entry of await fs.readdir(dir,{withFileTypes:true})) {
+      const p=path.join(dir,entry.name);
+      if(entry.isDirectory()) await remapJson(p);
+      else if(entry.name.endsWith('.json') || entry.name.endsWith('.json.bak')) {
+        let value; try {value=await load(p);} catch {continue;}
+        await write(p,remap(value));
+      }
+    }
+  }
+  await remapJson(destination);
+  const oldTimeline=path.join(destination,'Timelines',projectConfig.main_timeline_id);
+  await fs.rename(oldTimeline,path.join(destination,'Timelines',timelineId));
+  const content=remap(native);
+  content.id=timelineId; content.name=name; content.duration=generated.duration;
+  content.canvas_config=generated.canvas_config; content.fps=generated.fps;
+  content.tracks=generated.tracks;
+  content.materials={...native.materials,...generated.materials};
+  content.keyframes=generated.keyframes;
+  content.keyframe_graph_list=generated.keyframe_graph_list;
+  content.update_time=Date.now()*1000;
+  await write(path.join(destination,'draft_content.json'),content);
+  await write(path.join(destination,'Timelines',timelineId,'draft_content.json'),content);
+  const meta=remap(templateMeta);
+  meta.draft_id=projectId; meta.draft_name=name;
+  meta.draft_root_path=path.resolve(draftsDir); meta.draft_fold_path=destination.replaceAll('\\','/');
+  meta.draft_materials=sourceMeta.draft_materials;
+  meta.tm_duration=content.duration; meta.tm_draft_create=meta.tm_draft_modified=Date.now()*1000;
+  await write(path.join(destination,'draft_meta_info.json'),meta);
+  const entry={...meta,draft_json_file:path.join(destination,'draft_content.json'),draft_root_path:draftsDir.replaceAll('\\','/'),draft_cover:path.join(destination,'draft_cover.jpg')};
+  delete entry.draft_materials;
+  index.all_draft_store.unshift(entry); index.draft_ids=(index.draft_ids||0)+1;
+  await write(rootIndex,index);
+  const top=await fs.readFile(path.join(destination,'draft_content.json'));
+  const timeline=await fs.readFile(path.join(destination,'Timelines',timelineId,'draft_content.json'));
+  if(!top.equals(timeline)) throw new Error('Top-level and timeline drafts differ');
+  return {name,destination,projectId,timelineId,durationSeconds:content.duration/1e6,
+    clips:content.tracks.flatMap(t=>t.segments).length,newVersion:content.new_version,
+    appVersion:content.platform.app_version,timelineCopiesMatch:true,backupDirectory};
+}
