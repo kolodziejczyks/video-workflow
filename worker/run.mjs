@@ -6,6 +6,7 @@ import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInbox, stableBatches } from './inventory.mjs';
 import {reconnect, temporaryConnectionFailure} from './reconnect.mjs';
+import {observeJobUpload} from './upload-observer.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = process.argv[2];
@@ -50,12 +51,20 @@ async function update(stage, message = '', projectName) {
 async function tick() {
   const scan = stableBatches(seen, await scanInbox(config.inbox), Date.now());
   seen = scan.seen; inventory = scan.ready;
-  await api('/api/worker/heartbeat', { batches: inventory.map(({ sources,...batch }) => batch), message: current ? 'Processing a recording batch.' : 'Ready for a recording batch.' });
+  const heartbeat=await api('/api/worker/heartbeat', { batches: inventory.map(({ sources,...batch }) => batch), message: current ? 'Processing a recording batch.' : 'Ready for a recording batch.' });
   if (current && !finalizing) {
     let progress;
     try { progress=JSON.parse(await fs.readFile(path.join(work,current.id,'progress.json'),'utf8')); } catch(e) { if(e.code!=='ENOENT')throw e; }
     if (progress?.phase !== current.phase) progress = null;
     await update(progress?.stage || current.stage || 'preparing', progress?.message || current.message || '');
+  }
+  // Observation must never jeopardize an active processing lease.
+  if (!current && Array.isArray(heartbeat.uploadJobs) && heartbeat.uploadJobs.length) {
+    try {
+      const observations=[];
+      for(const job of heartbeat.uploadJobs) observations.push(await observeJobUpload(work,job));
+      await api('/api/worker/uploads',{observations});
+    } catch(error) {console.error('Upload observation unavailable; processing remains connected.');}
   }
 }
 async function runProcessor(command,args,directory,logName){
@@ -128,6 +137,10 @@ async function execute(job) {
     finalizing = true;
     await tickPromise;
     await update('ready', 'Native draft created. Open CapCut to review wording and cuts.', result.projectName);
+    if(config.autoOpenCapCut===true) {
+      try {await runProcessor(process.execPath,[path.join(root,'scripts/start_capcut_upload.mjs')],directory,'upload-launch.log');}
+      catch {console.error('Draft is ready, but CapCut launch failed. See upload-launch.log.');}
+    }
   } catch (error) {
     console.error(error.message);
     finalizing = true;

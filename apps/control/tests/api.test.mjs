@@ -11,6 +11,7 @@ function database() {
   const db = new DatabaseSync(':memory:');
   db.exec(fs.readFileSync(new URL('../migrations/0001_jobs.sql', import.meta.url),'utf8'));
   db.exec(fs.readFileSync(new URL('../migrations/0002_transcript_review.sql', import.meta.url),'utf8'));
+  db.exec(fs.readFileSync(new URL('../migrations/0003_upload_observations.sql', import.meta.url),'utf8'));
   return { async batch(statements) { db.exec('BEGIN'); try { const results=[];for(const s of statements)results.push(await s.run());db.exec('COMMIT');return results; } catch(e){db.exec('ROLLBACK');throw e;} }, prepare(sql) { let params=[]; return { bind(...values){params=values; return this;}, async first(){return db.prepare(sql).get(...params)||null;},async all(){return {results:db.prepare(sql).all(...params)};},async run(){return {meta:{changes:Number(db.prepare(sql).run(...params).changes)}};} }; } };
 }
 function setup() {
@@ -22,6 +23,27 @@ function setup() {
   const add=async(id,batchId=id)=>env.DB.prepare('INSERT INTO jobs(id,batch_id,batch_name,brief,target_seconds,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').bind(id,batchId,'Batch','',45,Date.now(),Date.now()).run();
   return {env,request,add};
 }
+test('upload observations are authenticated, bounded and cannot alter job lifecycle',async()=>{
+ const {request,env,add}=setup();
+ const ready='11111111-1111-4111-8111-111111111111', processing='22222222-2222-4222-8222-222222222222';
+ await add(ready);await add(processing);
+ await env.DB.prepare("UPDATE jobs SET status='ready',project_name='Ready draft' WHERE id=?").bind(ready).run();
+ const observation={jobId:ready,status:'recorded_complete',completedAt:new Date(Date.now()-1000).toISOString()};
+ assert.equal((await request('uploads',{observations:[observation]},'wrong')).status,401);
+ assert.equal((await request('uploads',{observations:[{...observation,status:'available_on_phone'}]})).status,400);
+ assert.equal((await request('uploads',{observations:[{...observation,completedAt:'invalid'}]})).status,400);
+ assert.equal((await request('uploads',{observations:Array(51).fill(observation)})).status,400);
+ assert.equal((await request('uploads',{observations:[observation,{...observation,jobId:processing}]})).status,200);
+ assert.equal((await env.DB.prepare('SELECT * FROM upload_observations WHERE job_id=?').bind(ready).first()).status,'recorded_complete');
+ assert.equal(await env.DB.prepare('SELECT * FROM upload_observations WHERE job_id=?').bind(processing).first(),null);
+ assert.equal((await env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(ready).first()).status,'ready');
+ const heartbeat=await request('heartbeat',{batches:[]});
+ assert.deepEqual(heartbeat.data.uploadJobs,[{id:ready,project_name:'Ready draft'}]);
+ await request('uploads',{observations:[{jobId:ready,status:'unverified'}]});
+ assert.equal((await env.DB.prepare('SELECT * FROM upload_observations WHERE job_id=?').bind(ready).first()).completed_at,null);
+ assert.equal((await request('uploads',{observations:[]})).status,200);
+});
+
 test('fails closed before Access is configured, including static assets',async()=>{
   const {env}=setup();
   for(const path of ['/','/api/overview','/assets/app.js']) assert.equal((await worker.fetch(new Request(`https://control.example${path}`),env)).status,401);

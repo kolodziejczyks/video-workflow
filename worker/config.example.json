@@ -1,5 +1,6 @@
 {
   "controlUrl": "https://video-workflow.YOUR-SUBDOMAIN.workers.dev",
   "inbox": "G:/My Drive/vids",
-  "processor": ["node", "scripts/process_batch.mjs"]
+  "processor": ["node", "scripts/process_batch.mjs"],
+  "autoOpenCapCut": false
 }

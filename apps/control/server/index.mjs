@@ -50,7 +50,7 @@ export default {
       if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
       if (url.pathname === '/api/overview' && request.method === 'GET') {
         const state = await env.DB.prepare('SELECT * FROM worker_state WHERE id = 1').first();
-        const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE status!='removed' ORDER BY created_at DESC LIMIT 50").all();
+        const { results } = await env.DB.prepare("SELECT jobs.*, upload_observations.status AS upload_status, upload_observations.completed_at AS upload_completed_at, upload_observations.checked_at AS upload_checked_at FROM jobs LEFT JOIN upload_observations ON upload_observations.job_id=jobs.id WHERE jobs.status!='removed' ORDER BY jobs.created_at DESC LIMIT 50").all();
         return json({ email, inboxUrl: `https://drive.google.com/drive/folders/${env.DRIVE_INBOX_ID}`, worker: state ? { lastSeen: state.last_seen, message: state.message } : null, batches: state ? JSON.parse(state.batches_json) : [], jobs: results.map(publicJob) });
       }
       const removal = url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)$/);
@@ -77,7 +77,17 @@ export default {
       if (url.pathname === '/api/worker/heartbeat' && request.method === 'POST') {
         const input = await body(request), batches = validateBatches(input.batches);
         await env.DB.prepare('INSERT INTO worker_state(id,last_seen,batches_json,message) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,batches_json=excluded.batches_json,message=excluded.message').bind(Date.now(), JSON.stringify(batches), String(input.message || '').slice(0,500)).run();
-        return json({ ok: true });
+        const {results: uploadJobs} = await env.DB.prepare("SELECT id,project_name FROM jobs WHERE status='ready' ORDER BY created_at DESC LIMIT 50").all();
+        return json({ ok: true, uploadJobs });
+      }
+      if (url.pathname === '/api/worker/uploads' && request.method === 'POST') {
+        const input = await body(request);
+        if (!Array.isArray(input.observations) || input.observations.length>50) return json({error:'Invalid upload observations.'},400);
+        for (const item of input.observations) {
+          if (!/^[a-f0-9-]{36}$/i.test(item?.jobId || '') || !['recorded_complete','unverified'].includes(item.status) || (item.status==='recorded_complete' && (typeof item.completedAt!=='string' || !Number.isFinite(Date.parse(item.completedAt)) || Date.parse(item.completedAt)>Date.now()+60000))) return json({error:'Invalid upload observation.'},400);
+        }
+        if(input.observations.length) await env.DB.batch(input.observations.map(item=>env.DB.prepare("INSERT INTO upload_observations(job_id,status,completed_at,checked_at) SELECT id,?,?,? FROM jobs WHERE id=? AND status='ready' ON CONFLICT(job_id) DO UPDATE SET status=excluded.status,completed_at=excluded.completed_at,checked_at=excluded.checked_at").bind(item.status,item.status==='recorded_complete'?item.completedAt:null,Date.now(),item.jobId)));
+        return json({ok:true});
       }
       if (url.pathname === '/api/worker/claim' && request.method === 'POST') {
         const input = await body(request);
