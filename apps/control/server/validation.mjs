@@ -1,11 +1,12 @@
-export const stages = new Set(['preparing', 'transcribing', 'planning', 'captions', 'building', 'waiting_for_capcut', 'ready', 'failed']);
+export const stages = new Set(['awaiting_review', 'preparing', 'transcribing', 'planning', 'captions', 'building', 'waiting_for_capcut', 'ready', 'failed']);
 export function validateJob(body, batches) {
   if (!body || typeof body.batchId !== 'string') throw new Error('Choose a recording batch.');
   const batch = batches.find(b => b.id === body.batchId);
   if (!batch) throw new Error('This batch is not available on the PC. Refresh and try again.');
   if (typeof body.brief !== 'string' || body.brief.length > 2000) throw new Error('Keep the brief under 2,000 characters.');
-  if (!Number.isInteger(body.targetSeconds) || body.targetSeconds < 15 || body.targetSeconds > 180) throw new Error('Choose a duration between 15 and 180 seconds.');
-  return { batchId: batch.id, batchName: batch.name, brief: body.brief.trim(), targetSeconds: body.targetSeconds };
+  const targetSeconds = body.targetSeconds ?? 45; // Legacy clients/database only; reviewed montages keep all included text.
+  if (!Number.isInteger(targetSeconds) || targetSeconds < 15 || targetSeconds > 180) throw new Error('Choose a duration between 15 and 180 seconds.');
+  return { batchId: batch.id, batchName: batch.name, brief: body.brief.trim(), targetSeconds };
 }
 export function validateBatches(batches) {
   if (!Array.isArray(batches) || batches.length > 500) throw new Error('Invalid batch inventory.');

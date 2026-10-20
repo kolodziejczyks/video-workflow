@@ -17,5 +17,12 @@ class SelectionTests(unittest.TestCase):
     def test_no_speech(self):
         self.assertEqual(select_clips([('silent.mov', {'segments': []})],45), [])
 
+    def test_reviewed_speech_has_no_cutoff_but_still_removes_duplicates(self):
+        transcripts = [('one.mov', {'segments': [segment('Same words.', 0, 30), segment('Same words.', 31, 61)]}),
+                       ('ending.mov', {'segments': [segment('Yes.', 0, .2), segment('This is the ending.', 1, 9)]})]
+        clips = select_clips(transcripts)
+        self.assertEqual(len(clips), 3)
+        self.assertEqual(clips[-1]['source'], 'ending.mov')
+
 if __name__ == '__main__':
     unittest.main()

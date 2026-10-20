@@ -1,6 +1,6 @@
 # Remote control: React + Cloudflare + Windows
 
-The control app lives in `apps/control/`: React/Vite frontend, a Cloudflare Worker API, and D1 job storage. `worker/run.mjs` runs under the Windows user's account and polls outbound HTTPS. No inbound PC port or tunnel is required. This is prepared locally, not deployed or installed as a background service.
+The control app lives in `apps/control/`: React/Vite frontend, a Cloudflare Worker API, and D1 job storage. `worker/run.mjs` runs under the Windows user's account and polls outbound HTTPS. No inbound PC port or tunnel is required. The control app is deployed at https://cutroom.kolodziejczyks.pl; the PC worker runs in a foreground session, not as an installed background service.
 
 ## What the first version does
 
@@ -8,7 +8,11 @@ The control app lives in `apps/control/`: React/Vite frontend, a Cloudflare Work
 - Requires a stable inventory for 30 seconds before advertising a batch. The user must still finish uploading before submitting; a pause in an upload is not proof that the upload is complete.
 - Creates duplicate-protected jobs and reports processing stages, failures and project names.
 - Copies originals to an isolated job directory and verifies SHA-256 hashes.
-- Transcribes Polish speech locally, keeps speech segments in recording order, removes near-duplicates, and uses a soft duration target without truncating the final selected segment.
+- Transcribes Polish speech locally with configurable vocabulary hints (AI by default). New jobs pause for transcript review before any montage is built. Word probabilities and possible AI/jaj confusions are exposed as review hints, not guarantees of correctness.
+- Provides sentence/clause-sized text review, audio playback, wording acceptance and explicit exclusion from the montage. Save progress before leaving or switching devices; revision checks prevent stale saves. Approval requires all included sentences accepted and at least one included sentence.
+- After approval, force-aligns edited wording to the original audio, retains original timing for unchanged sentences, and uses only included approved sentences for chronological selection with near-duplicate removal and no duration cutoff. Alignment failure stops the job instead of inventing word timing. Edited review intervals longer than 30 seconds are rejected by the current aligner.
+- Keeps included approved speech in recording order and removes near-duplicates. Reviewed montages have no duration limit: the UI has no Aim for control, and later recordings must not be dropped to meet a target. Legacy jobs retain their previous target behavior. Short approved utterances are kept.
+- Names new native projects after the upload folder, for example `AI news - draft 3f340764`; a short job suffix distinguishes repeated drafts. Existing/staged project names are preserved. Internal job folders/media keys remain stable; originals retain their filenames.
 - Creates editable Montra captions and a native template-based CapCut project through MCP. Copies the saved Montra font descriptor from the approved baseline.
 - Waits for CapCut to close, backs up the project index through the native helper, then registers the new draft. It never launches or closes CapCut.
 - Persists staged builds for interrupted-job retries and checks synchronized timeline copies and caption font metadata before reporting ready.
@@ -56,8 +60,27 @@ node worker/run.mjs worker/config.local.json
 
 5. Upload one subfolder per batch, wait for sync, and submit from the control page. Start with the foreground worker for validation. Installing it with Windows Task Scheduler is a later setup step after successful end-to-end testing, using the same Windows account and environment.
 
+A new job has phase `transcribe` and releases its lease in `awaiting_review`. Approving the frozen review queues phase `montage`, which reads the staged source copies and approved wording. Legacy jobs retain their original behavior. Pending reviews count as active for duplicate protection but do not block other processing.
+
 The worker uses a local exclusive lock and a 90-second server lease renewed every 20 seconds. On heartbeat failure it stops its processor tree and exits; restart after resolving the connection. After a crash, confirm no worker/processor is running before removing `work/batches/worker.lock`. An offline PC leaves pending jobs in D1. A failed job can be loaded into the form and submitted as a new attempt; the old files and logs remain under `work/batches/<job-id>/`.
 
 ## Before calling it ready for everyday use
 
 Run a new recording batch end to end. Test interrupted processing, duplicate submissions, an offline PC, and an open CapCut session. Inspect the generated draft in CapCut and get feedback on cuts and captions. Local builds, API tests and FFmpeg inspection cannot establish native CapCut playback compatibility.
+
+## Private review audio and retention
+
+The PC creates mono MP3 proxies at 48 kbps, once per source recording. Only these review proxies are uploaded; original video stays on Drive/the PC. Cloud storage is the private R2 bucket `cutroom-review-audio`, binding `REVIEW_AUDIO`. The existing Google Access login and signed user identity protect playback; machine credentials cannot read the user playback route. Byte-range playback supports seeking on phones. Objects are capped at 20 MB per recording.
+
+The bucket has the verified lifecycle rule `delete-review-audio-after-30-days`, prefix `review-audio/`, expiry 30 days after object creation. The playback API additionally denies access at the object's 30-day expiration even if physical lifecycle removal is still pending. Retries do not overwrite an existing object or extend its expiry. Transcript text, originals and native projects are retained. This policy covers cloud review proxies; local transcription caches remain on the PC. Playback can work while the PC is offline after upload; montage generation waits for the PC.
+
+For a fresh account, enable R2 in the dashboard first. Provision and verify the private bucket (do not enable public access):
+
+```powershell
+node node_modules/wrangler/bin/wrangler.js r2 bucket create cutroom-review-audio
+node node_modules/wrangler/bin/wrangler.js r2 bucket lifecycle add cutroom-review-audio delete-review-audio-after-30-days review-audio/ --expire-days 30 --force
+node node_modules/wrangler/bin/wrangler.js r2 bucket lifecycle list cutroom-review-audio
+node node_modules/wrangler/bin/wrangler.js d1 migrations apply video-workflow --remote
+```
+
+Stop/restart an existing worker only with user authorization. Deploy the new backend and restart the updated worker together: an old worker must not claim new transcript-review jobs. Frontend code is built before deployment. Browser/mobile playback and a reviewed-text native draft need user validation; unit tests and local alignment checks do not establish those outcomes.

@@ -19,7 +19,7 @@ for (const file of [font, path.join(baseline,'draft_content.json'), python, layo
 const env = { ...process.env, CAPCUT_BATCH_DIRECTORY: directory, CAPCUT_STYLE_SOURCE: baseline };
 const progressFile = path.join(directory,'progress.json');
 async function progress(stage, message) {
-  await fs.writeFile(progressFile+'.tmp', JSON.stringify({ stage, message }));
+  await fs.writeFile(progressFile+'.tmp', JSON.stringify({ stage, message, phase: job.phase }));
   await fs.rename(progressFile+'.tmp', progressFile);
 }
 let child;
@@ -40,10 +40,19 @@ if(!state){
   try { await fs.rename(path.join(directory,'build'),path.join(directory,`build-interrupted-${Date.now()}`)); } catch(e) { if(e.code!=='ENOENT')throw e; }
   await progress('transcribing','Transcribing Polish speech locally.');
   await run(python,[path.join(root,'scripts/transcribe_samples.py'),'--ffmpeg',ffmpeg,'--input',path.join(directory,'media'),'--output',path.join(directory,'transcripts')]);
-  await progress('planning','Keeping speech in recording order and removing near-duplicate segments. Creative notes are saved for review.');
+  if (job.phase === 'transcribe') {
+    await run(python,[path.join(root,'scripts/prepare_review.py'),manifest,'--ffmpeg',ffmpeg]);
+    await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({jobId:job.id,status:'awaiting_review'}));
+    process.exit(0);
+  }
+  if (job.phase === 'montage') {
+    await progress('planning','Aligning your approved wording to the original audio.');
+    await run(python,[path.join(root,'scripts/align_review.py'),manifest]);
+  }
+  await progress('planning',job.phase === 'montage' ? 'Keeping included approved text in recording order, removing near-duplicates, with no duration limit.' : 'Keeping speech in recording order and removing near-duplicate segments.');
   await run(python,[path.join(root,'scripts/plan_batch.py'),manifest]);
   await progress('captions','Creating editable Montra captions with active-word highlights.');
-  await run(layoutPython,[path.join(root,'scripts/plan_reference_captions.py'),'--font',font,'--plan',path.join(directory,'edit-plan.json'),'--transcripts',path.join(directory,'transcripts'),'--output',path.join(directory,'caption-plan.json')]);
+  await run(layoutPython,[path.join(root,'scripts/plan_reference_captions.py'),'--font',font,'--plan',path.join(directory,'edit-plan.json'),'--transcripts',path.join(directory,job.phase === 'montage' ? 'approved-transcripts' : 'transcripts'),'--output',path.join(directory,'caption-plan.json')]);
   await progress('building','Building a separate native CapCut draft through MCP.');
   await run(process.execPath,[path.join(root,'scripts/build_reference_style_project.mjs')]);
   state=JSON.parse(await fs.readFile(stateFile,'utf8'));

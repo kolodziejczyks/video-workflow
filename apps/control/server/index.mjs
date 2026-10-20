@@ -1,3 +1,4 @@
+import { reviewRoutes, ReviewValidationError } from './review.mjs';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { validateJob, validateBatches, stages } from './validation.mjs';
 
@@ -26,7 +27,7 @@ async function machineAuth(request, env) {
 }
 async function body(request) {
   const text = await request.text();
-  if (text.length > 200000) throw new Error('Request too large.');
+  if (text.length > 2000000) throw new Error('Request too large.');
   return JSON.parse(text);
 }
 const publicJob = row => row && Object.fromEntries(Object.entries(row).filter(([k]) => !['lease_token', 'lease_until'].includes(k)));
@@ -44,6 +45,8 @@ export default {
         if (!email) return json({ error: 'Sign in through Cloudflare Access. Access configuration is required before using this app.' }, 401);
         if (!['GET', 'HEAD'].includes(request.method) && request.headers.get('Origin') !== url.origin) return json({ error: 'Invalid request origin.' }, 403);
       }
+      const reviewResponse = await reviewRoutes(request, env, url, machine, json, body);
+      if (reviewResponse) return reviewResponse;
       if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
       if (url.pathname === '/api/overview' && request.method === 'GET') {
         const state = await env.DB.prepare('SELECT * FROM worker_state WHERE id = 1').first();
@@ -56,8 +59,8 @@ export default {
         const input = validateJob(await body(request), JSON.parse(state.batches_json));
         const id = crypto.randomUUID(), now = Date.now();
         // Unique partial index makes double taps and concurrent submissions harmless.
-        const result = await env.DB.prepare('INSERT OR IGNORE INTO jobs(id,batch_id,batch_name,brief,target_seconds,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').bind(id, input.batchId, input.batchName, input.brief, input.targetSeconds, now, now).run();
-        const job = result.meta.changes ? await env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first() : await env.DB.prepare("SELECT * FROM jobs WHERE batch_id = ? AND status IN ('queued','running')").bind(input.batchId).first();
+        const result = await env.DB.prepare("INSERT OR IGNORE INTO jobs(id,batch_id,batch_name,brief,target_seconds,created_at,updated_at,phase) VALUES(?,?,?,?,?,?,?,'transcribe')").bind(id, input.batchId, input.batchName, input.brief, input.targetSeconds, now, now).run();
+        const job = result.meta.changes ? await env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first() : await env.DB.prepare("SELECT * FROM jobs WHERE batch_id = ? AND status IN ('queued','running','awaiting_review')").bind(input.batchId).first();
         return json({ job: publicJob(job), existing: !result.meta.changes }, result.meta.changes ? 201 : 200);
       }
       if (url.pathname === '/api/worker/heartbeat' && request.method === 'POST') {
@@ -77,15 +80,25 @@ export default {
       if (update && request.method === 'POST') {
         const input = await body(request);
         if (!stages.has(input.stage)) throw new Error('Invalid processing stage.');
-        const now = Date.now(), status = input.stage === 'ready' ? 'ready' : input.stage === 'failed' ? 'failed' : 'running';
+        if (jobGuardRequired(input.stage)) {
+          const job = await env.DB.prepare('SELECT phase FROM jobs WHERE id=?').bind(update[1]).first();
+          if (job?.phase === 'transcribe') return json({ error: 'Approve the transcript before building a montage.' }, 409);
+        }
+        if (input.stage === 'awaiting_review') {
+          const job = await env.DB.prepare('SELECT phase FROM jobs WHERE id=?').bind(update[1]).first();
+          if (job?.phase !== 'transcribe' || !await env.DB.prepare('SELECT job_id FROM transcript_reviews WHERE job_id=?').bind(update[1]).first()) return json({ error: 'Upload the transcript first.' }, 409);
+        }
+        const now = Date.now(), status = input.stage === 'ready' ? 'ready' : input.stage === 'failed' ? 'failed' : input.stage === 'awaiting_review' ? 'awaiting_review' : 'running';
         const result = await env.DB.prepare('UPDATE jobs SET stage=?,status=?,message=?,project_name=?,updated_at=?,lease_until=? WHERE id=? AND lease_token=? AND status=\'running\' AND lease_until>=?').bind(input.stage, status, String(input.message || '').slice(0,1000), typeof input.projectName === 'string' ? input.projectName.slice(0,200) : null, now, now+90000, update[1], input.leaseToken || '', now).run();
         return result.meta.changes ? json({ ok: true }) : json({ error: 'Job lease lost. Stop processing.' }, 409);
       }
       return json({ error: 'Not found.' }, 404);
     } catch (error) {
-      if (error instanceof SyntaxError || /^Invalid|^Choose|^Keep|^This batch|^Request too/.test(error.message)) return json({ error: error.message }, 400);
+      if (error instanceof ReviewValidationError || error instanceof SyntaxError || /^Invalid|^Choose|^Keep|^This batch|^Request too/.test(error.message)) return json({ error: error.message }, 400);
       console.error('Request failed:', error.name);
       return json({ error: 'The request failed. Check the service configuration and try again.' }, 500);
     }
   }
 };
+
+function jobGuardRequired(stage) { return ['planning','captions','building','waiting_for_capcut','ready'].includes(stage); }

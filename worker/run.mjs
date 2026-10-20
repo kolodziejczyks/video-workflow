@@ -34,11 +34,11 @@ async function hashFile(file) {
   return hash.digest('hex');
 }
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function api(route, input) {
-  const response = await fetch(new URL(route, base), { method: 'POST', headers: {
-    'Content-Type': 'application/json', Authorization: `Bearer ${process.env.VIDEO_WORKER_TOKEN}`,
+async function api(route, input, options = {}) {
+  const response = await fetch(new URL(route, base), { method: options.method || 'POST', headers: {
+    'Content-Type': options.audio ? 'audio/mpeg' : 'application/json', ...(current ? { 'X-Worker-Lease': current.lease_token } : {}), ...(options.audio ? { 'Content-Length': String(input.length) } : {}), Authorization: `Bearer ${process.env.VIDEO_WORKER_TOKEN}`,
     ...(process.env.CF_ACCESS_CLIENT_ID ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET || '' } : {})
-  }, body: JSON.stringify(input), signal: AbortSignal.timeout(15000) });
+  }, body: options.method === 'GET' ? undefined : options.audio ? input : JSON.stringify(input), signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`Control API ${response.status}; check authentication, Access policies and the worker lease.`);
   return response.json();
 }
@@ -53,6 +53,7 @@ async function tick() {
   if (current && !finalizing) {
     let progress;
     try { progress=JSON.parse(await fs.readFile(path.join(work,current.id,'progress.json'),'utf8')); } catch(e) { if(e.code!=='ENOENT')throw e; }
+    if (progress?.phase !== current.phase) progress = null;
     await update(progress?.stage || current.stage || 'preparing', progress?.message || current.message || '');
   }
 }
@@ -60,9 +61,15 @@ async function execute(job) {
   current = { ...job, stage: 'preparing' };
   try {
     await update('preparing', 'Checking the synced batch and staging original recordings.');
+    const directory = path.join(work, job.id), media = path.join(directory, 'media');
+    const manifest = path.join(directory, 'job.json');
+    if (job.phase === 'montage') {
+      const staged = JSON.parse(await fs.readFile(manifest,'utf8'));
+      for (const source of staged.sources) if (await hashFile(source.path) !== source.sha256) throw new Error('Staged recording changed since transcription.');
+      await fs.writeFile(manifest,JSON.stringify({...staged,phase:'montage'}));
+    } else {
     const batch = (await scanInbox(config.inbox)).find(b => b.id === job.batch_id);
     if (!batch) throw new Error('The batch changed after submission. Wait for sync, then submit it again.');
-    const directory = path.join(work, job.id), media = path.join(directory, 'media');
     await fs.mkdir(media, { recursive: true });
     const sources = [];
     for (const [i,source] of batch.sources.entries()) {
@@ -75,8 +82,13 @@ async function execute(job) {
       if (originalHash !== copyHash) throw new Error('Copied media differs from the original. Resubmit after sync finishes.');
       sources.push({ originalName: source.name, path: destination, size: copy.size, sha256: copyHash });
     }
-    const manifest = path.join(directory, 'job.json');
-    await fs.writeFile(manifest, JSON.stringify({ id: job.id, batchName: job.batch_name, brief: job.brief, targetSeconds: job.target_seconds, sources, directory }, null, 2));
+    await fs.writeFile(manifest, JSON.stringify({ id: job.id, phase: job.phase, batchName: job.batch_name, brief: job.brief, targetSeconds: job.target_seconds, sources, directory }, null, 2));
+    }
+    if (job.phase === 'montage') {
+      const review = await api(`/api/worker/jobs/${job.id}/review`, null, {method:'GET'});
+      if (!review.approved) throw new Error('Transcript approval is required.');
+      await fs.writeFile(path.join(directory,'approved-review.json'), JSON.stringify(review));
+    }
     const log = await fs.open(path.join(directory, 'processor.log'), 'a');
     try {
       await new Promise((resolve, reject) => {
@@ -91,6 +103,15 @@ async function execute(job) {
     } finally { child = null; await log.close(); }
     // The processor must explicitly attest completion; exit 0 alone is insufficient.
     const result = JSON.parse(await fs.readFile(path.join(directory, 'result.json'), 'utf8'));
+    if (result.jobId === job.id && result.status === 'awaiting_review' && job.phase === 'transcribe') {
+      const review = JSON.parse(await fs.readFile(path.join(directory,'review.json'),'utf8'));
+      for (const source of review.sources) await api(`/api/worker/jobs/${job.id}/audio/${source.id}`, await fs.readFile(path.join(directory,'review-audio',`${source.id}.mp3`)), {method:'PUT',audio:true});
+      await api(`/api/worker/jobs/${job.id}/review`,review);
+      finalizing = true;
+      await tickPromise;
+      await update('awaiting_review','Review and accept the transcript before creating your montage.');
+      return;
+    }
     if (result.jobId !== job.id || result.status !== 'ready' || typeof result.projectName !== 'string' || !result.projectName.trim()) throw new Error('Processor did not return a verified native project result.');
     finalizing = true;
     await tickPromise;
