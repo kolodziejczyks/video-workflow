@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInbox, stableBatches } from './inventory.mjs';
+import {reconnect, temporaryConnectionFailure} from './reconnect.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = process.argv[2];
@@ -39,7 +40,7 @@ async function api(route, input, options = {}) {
     'Content-Type': options.audio ? 'audio/mpeg' : 'application/json', ...(current ? { 'X-Worker-Lease': current.lease_token } : {}), ...(options.audio ? { 'Content-Length': String(input.length) } : {}), Authorization: `Bearer ${process.env.VIDEO_WORKER_TOKEN}`,
     ...(process.env.CF_ACCESS_CLIENT_ID ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET || '' } : {})
   }, body: options.method === 'GET' ? undefined : options.audio ? input : JSON.stringify(input), signal: AbortSignal.timeout(15000) });
-  if (!response.ok) throw new Error(`Control API ${response.status}; check authentication, Access policies and the worker lease.`);
+  if (!response.ok) throw Object.assign(new Error(`Control API ${response.status}; check authentication, Access policies and the worker lease.`), {status:response.status});
   return response.json();
 }
 async function update(stage, message = '', projectName) {
@@ -139,14 +140,17 @@ try {
   const timer = setInterval(() => {
     if (busy || stopped) return;
     busy = true;
-    tickPromise = tick().catch(error => { console.error(error.message); stopProcessor(); stopped = true; }).finally(() => { busy = false; });
+    tickPromise = tick().catch(error => { console.error(error.message); if (!current && temporaryConnectionFailure(error)) return; stopProcessor(); stopped = true; }).finally(() => { busy = false; });
   }, 20000);
   try {
-    await tick();
+    const retryOptions = {pause:delay, report:message=>console.error(message), stopped:()=>stopped};
+    await reconnect(tick,retryOptions);
     console.log('Worker connected. Waiting for synced batches and draft requests.');
     while (!stopped) {
       if (!busy) {
-        const { job } = await api('/api/worker/claim', {capabilities:['project-removal-v1']});
+        const claimed = await reconnect(()=>api('/api/worker/claim', {capabilities:['project-removal-v1']}),retryOptions);
+        if (!claimed || stopped) break;
+        const {job} = claimed;
         if (job) await execute(job);
       }
       if (!stopped) await delay(5000);
