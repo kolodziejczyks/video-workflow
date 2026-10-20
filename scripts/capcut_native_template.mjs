@@ -6,7 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const load = async p => JSON.parse(await fs.readFile(p, 'utf8'));
 const uid = () => crypto.randomUUID().toUpperCase();
-export async function applySavedTransition({directory,backupDirectory}) {
+export async function applySavedTransition({directory,backupDirectory,sourceDirectory=process.env.CAPCUT_TRANSITION_SOURCE}) {
   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
   if(/CapCut\.exe/i.test(stdout))throw new Error('Close CapCut before editing transitions');
   const config=await load(path.join(directory,'Timelines/project.json'));
@@ -17,24 +17,45 @@ export async function applySavedTransition({directory,backupDirectory}) {
   const clips=[...tracks[0].segments].sort((a,b)=>a.target_timerange.start-b.target_timerange.start);
   const transitions=draft.materials.transitions||[];
   const ids=new Set(clips.flatMap(s=>s.extra_material_refs||[]));
-  const templates=transitions.filter(t=>ids.has(t.id));
+  let templates=transitions.filter(t=>ids.has(t.id));
+  if(!templates.length && sourceDirectory) {
+    const source=await load(path.join(sourceDirectory,'draft_content.json'));
+    const sourceIds=new Set(source.tracks.filter(t=>t.type==='video').flatMap(t=>t.segments.flatMap(s=>s.extra_material_refs||[])));
+    templates=(source.materials.transitions||[]).filter(t=>sourceIds.has(t.id) && t.resource_id==='6724227717195108867');
+  }
   if(!templates.length || new Set(templates.map(t=>t.resource_id)).size!==1)throw new Error('Expected one saved transition type');
   const template=templates[0];await fs.access(template.path);
   if(!/^\d+$/.test(template.resource_id))throw new Error('Saved resource ID is not a native catalog ID');
+  const plan=process.env.CAPCUT_TRANSITION_PLAN ? await load(process.env.CAPCUT_TRANSITION_PLAN) : null;
+  if(plan && (plan.clips.length!==clips.length || plan.clips.some(c=>!Number.isFinite(c.speech_out))))throw new Error('Transition safety plan does not match the draft');
   await fs.mkdir(backupDirectory,{recursive:true});
   await fs.cp(directory,path.join(backupDirectory,'project-before-transitions'),{recursive:true,errorOnExist:true,force:false});
-  let added=0,retained=0;
+  let added=0,retained=0,shortened=0,removed=0,skipped=0;
+  const removedIds=new Set();
   for(let i=0;i<clips.length-1;i++){
     const seg=clips[i];
+    // Tiny effects are unreliable in native playback; leave short utterances clean.
+    // Keep a clean cut on either side of utterances shorter than two seconds.
+    if(Math.min(seg.target_timerange.duration,clips[i+1].target_timerange.duration)<2000000 ||
+       (plan && plan.clips[i].out-plan.clips[i].speech_out < template.duration/1e6)){
+      const existing=transitions.filter(t=>(seg.extra_material_refs||[]).includes(t.id));
+      for(const effect of existing)removedIds.add(effect.id);
+      seg.extra_material_refs=(seg.extra_material_refs||[]).filter(id=>!removedIds.has(id));
+      removed+=existing.length;skipped++;continue;
+    }
     if(transitions.some(t=>(seg.extra_material_refs||[]).includes(t.id))){retained++;continue;}
-    if(template.duration>Math.min(seg.target_timerange.duration,clips[i+1].target_timerange.duration))throw new Error('Transition exceeds adjacent clip duration');
     const copy=structuredClone(template);copy.id=uid();
+    // Reserve at most half of each adjacent clip for a boundary effect so tiny
+    // utterances can have incoming and outgoing transitions without overlap.
+    copy.duration=Math.min(template.duration,Math.floor(Math.min(seg.target_timerange.duration,clips[i+1].target_timerange.duration)/2));
+    if(copy.duration<=0)throw new Error('Transition has no available duration');
+    if(copy.duration<template.duration)shortened++;
     transitions.push(copy);seg.extra_material_refs=[...(seg.extra_material_refs||[]),copy.id];added++;
   }
-  draft.materials.transitions=transitions;
+  draft.materials.transitions=transitions.filter(t=>!removedIds.has(t.id));
   await write(path.join(directory,'draft_content.json'),draft);await write(timelinePath,draft);
   return {name:template.name,resourceId:template.resource_id,durationSeconds:template.duration/1e6,
-    retained,added,cutCount:clips.length-1,backupDirectory};
+    retained,added,shortened,removed,skipped,cutCount:clips.length-1,backupDirectory};
 }
 export async function useSavedFont({directory,fontPath,layoutPath,backupDirectory}) {
   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);

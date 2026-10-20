@@ -4,12 +4,16 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {Client} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import {StdioClientTransport} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const directory='C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft/Polish Caption Style 2026-10-19T20-23-27-855Z';
+const baseline='C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft/Polish Caption Style 2026-10-19T20-23-27-855Z';
+function option(name,fallback){const i=process.argv.indexOf(name);if(i<0)return fallback;if(!process.argv[i+1] || process.argv[i+1].startsWith('--'))throw new Error(`Missing value for ${name}`);return path.resolve(process.argv[i+1]);}
+const directory=option('--directory',baseline);
+const sourceDirectory=option('--source',baseline);
+const safetyPlan=option('--plan',null);
 const out=path.join(root,'work/transitions',new Date().toISOString().replace(/[:.]/g,'-'));
 await fs.mkdir(out,{recursive:true});
 const client=new Client({name:'saved-transition',version:'1.0.0'});
 const transport=new StdioClientTransport({command:process.execPath,args:[path.join(root,'work/aiperson-capcut-mcp/dist/src/index.js')],
- env:{...process.env,CAPCUT_NATIVE_HELPER:pathToFileURL(path.join(root,'scripts/capcut_native_template.mjs')).href},stderr:'pipe'});
+ env:{...process.env,CAPCUT_NATIVE_HELPER:pathToFileURL(path.join(root,'scripts/capcut_native_template.mjs')).href,CAPCUT_TRANSITION_SOURCE:sourceDirectory,...(safetyPlan?{CAPCUT_TRANSITION_PLAN:safetyPlan}:{})},stderr:'pipe'});
 try{
  await client.connect(transport);
  const result=await client.callTool({name:'capcut_apply_saved_transition',arguments:{directory,backup_directory:out}});

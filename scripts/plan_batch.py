@@ -4,6 +4,30 @@ import json
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
+import wave
+
+def protect_speech(clips, durations, blocked, padding=.5):
+    """Join continuous reviewed speech and keep a tail without restoring excluded takes."""
+    merged = []
+    for clip in clips:
+        clip = dict(clip)
+        previous = merged[-1] if merged else None
+        barriers = blocked.get(clip['source'], [])
+        if (previous and previous['source'] == clip['source']
+                and clip['in'] - previous['out'] <= .65
+                and not any(a < clip['out'] and b > previous['out'] for a, b in barriers)):
+            previous['out'] = max(previous['out'], clip['out'])
+        else:
+            merged.append(clip)
+    for clip in merged:
+        speech_end = clip['out']
+        end = min(durations[clip['source']], speech_end + padding)
+        for start, stop in blocked.get(clip['source'], []):
+            if stop > speech_end and start < end:
+                end = min(end, max(speech_end, start - .03))
+        clip.update(out=end, speech_out=speech_end,
+                    reason='Reviewed speech with protected ending; continuous sentences joined')
+    return merged
 
 def select_clips(transcripts, target=None):
     clips = []
@@ -43,6 +67,24 @@ if __name__ == '__main__':
         transcripts.append((media.name, transcript))
     reviewed = job.get('phase') == 'montage'
     clips = select_clips(transcripts, None if reviewed else job['targetSeconds'])
+    if reviewed:
+        review = json.loads((directory/'approved-review.json').read_text(encoding='utf-8'))
+        blocked = {}
+        for line in review['lines']:
+            if line['excluded']:
+                source = next(s for s, _ in transcripts if Path(s).stem == line['source'])
+                blocked.setdefault(source, []).append((line['start'], line['end']))
+        # A near-duplicate removed by selection must not return through padding/merging.
+        for source, transcript in transcripts:
+            for segment in transcript['segments']:
+                words = segment.get('words') or []
+                if words and not any(c['source'] == source and c['in'] <= words[0]['start'] and c['out'] >= words[-1]['end'] for c in clips):
+                    blocked.setdefault(source, []).append((words[0]['start'], words[-1]['end']))
+        durations = {}
+        for source, _ in transcripts:
+            with wave.open(str(directory/'transcripts'/f'{Path(source).stem}.wav'), 'rb') as audio:
+                durations[source] = audio.getnframes()/audio.getframerate()
+        clips = protect_speech(clips, durations, blocked)
     if not clips:
         raise SystemExit('No timed speech found in this recording batch.')
     (directory/'edit-plan.json').write_text(json.dumps({
