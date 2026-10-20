@@ -52,7 +52,7 @@ try {
    const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
    if(/CapCut\.exe/i.test(stdout))throw new Error('Close CapCut before registering a new project');
  }
- const result=await call('capcut_rebuild_from_native_template',{template_directory:path.join(actual,'1019'),
+ const result=await call('capcut_rebuild_from_native_template',{template_directory:process.env.CAPCUT_NATIVE_TEMPLATE || path.join(root,'work/templates/empty-capcut-9.6'),
    source_directory:state.sourceDirectory,name:state.name,backup_directory:path.join(out,publishing?'publish-backup':'native-backup')});
  state[publishing?'registeredProject':'stagedProject']=result;
  await fs.writeFile(path.join(out,'state.json'),JSON.stringify(state,null,2));

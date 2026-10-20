@@ -53,3 +53,7 @@ The builder's basic text-style helper still labels text with the initial Montser
 Use syntax checks and the upstream suite when code changes justify them. The upstream suite can be run with `node --test dist/tests/draft-builder.test.js` inside the built checkout, with portable FFmpeg/ffprobe on that child process's PATH. Its 21 tests passed; they do not establish native rendering compatibility.
 
 Before native-store writes, confirm CapCut is closed, preserve backups, and use MCP. Never stop an active editing window without explicit authorization. User feedback already confirms the active native project's playback and Montra appearance; only new changes need fresh review. Exports and publication have separate approval requirements.
+
+## Preserved batch template assets
+
+Batch processing defaults to ignored work/templates/approved-caption-style/draft_content.json for the approved Montra descriptor and work/templates/empty-capcut-9.6 for the app-authored empty 1019 scaffold. These are independent copies outside CapCut's live project library, so moving or deleting visible projects does not remove build dependencies. Keep them outside Git and preserve them with workstation backups. CAPCUT_STYLE_SOURCE and CAPCUT_NATIVE_TEMPLATE override these paths. Provision them from the approved style and original empty native template on a fresh workstation; do not substitute an upstream from-scratch draft. Preflight checks required files before transcription.

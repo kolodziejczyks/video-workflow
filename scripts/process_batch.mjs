@@ -10,12 +10,13 @@ const job = JSON.parse(await fs.readFile(manifest, 'utf8'));
 const directory = path.resolve(job.directory);
 if (path.dirname(directory) !== path.join(root, 'work', 'batches') || path.basename(directory) !== job.id) throw new Error('Job directory must be an isolated work/batches/<job-id> folder.');
 const font = process.env.CAPCUT_MONTRA_FONT || 'C:/Users/bezaw/AppData/Local/CapCut/User Data/Cache/effect/7462281584457125126/6667874da3a7ce4e77b7c2fed5055c3a/font.ttf';
-const baseline = process.env.CAPCUT_STYLE_SOURCE || 'C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft/Polish Caption Style 2026-10-19T20-23-27-855Z';
+const baseline = process.env.CAPCUT_STYLE_SOURCE || path.join(root, 'work', 'templates', 'approved-caption-style');
 const python = path.join(root, '.venv', 'Scripts', 'python.exe');
 const layoutPython = process.env.CAPCUT_LAYOUT_PYTHON || 'C:/Users/bezaw/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe';
 const ffmpegRoot = path.join(root, 'work', 'tools', 'ffmpeg-essentials');
 const ffmpeg = path.join(ffmpegRoot, (await fs.readdir(ffmpegRoot)).find(n=>n.startsWith('ffmpeg-')), 'bin', 'ffmpeg.exe');
-for (const file of [font, path.join(baseline,'draft_content.json'), python, layoutPython, ffmpeg]) await fs.access(file);
+const nativeTemplate = process.env.CAPCUT_NATIVE_TEMPLATE || path.join(root, 'work', 'templates', 'empty-capcut-9.6');
+for (const file of [font, path.join(baseline,'draft_content.json'), path.join(nativeTemplate,'draft_content.json'), path.join(nativeTemplate,'draft_meta_info.json'), path.join(nativeTemplate,'Timelines/project.json'), python, layoutPython, ffmpeg]) await fs.access(file);
 const env = { ...process.env, CAPCUT_BATCH_DIRECTORY: directory, CAPCUT_STYLE_SOURCE: baseline };
 const progressFile = path.join(directory,'progress.json');
 async function progress(stage, message) {
