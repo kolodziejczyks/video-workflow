@@ -39,5 +39,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(protected),2)
         self.assertAlmostEqual(protected[0]['out'],1.07)
 
+    def test_explicit_keep_both_is_not_undone_by_automatic_duplicate_removal(self):
+        transcripts=[('one.mov',{'segments':[segment('Keep this repeated sentence.',0,3)]}),
+                     ('two.mov',{'segments':[segment('Keep this repeated sentence.',0,3)]})]
+        self.assertEqual(len(select_clips(transcripts,deduplicate=False)),2)
+        self.assertEqual(len(select_clips(transcripts)),1)
+
 if __name__ == '__main__':
     unittest.main()

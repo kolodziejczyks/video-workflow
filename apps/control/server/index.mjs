@@ -50,8 +50,19 @@ export default {
       if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
       if (url.pathname === '/api/overview' && request.method === 'GET') {
         const state = await env.DB.prepare('SELECT * FROM worker_state WHERE id = 1').first();
-        const { results } = await env.DB.prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 50').all();
+        const { results } = await env.DB.prepare("SELECT * FROM jobs WHERE status!='removed' ORDER BY created_at DESC LIMIT 50").all();
         return json({ email, inboxUrl: `https://drive.google.com/drive/folders/${env.DRIVE_INBOX_ID}`, worker: state ? { lastSeen: state.last_seen, message: state.message } : null, batches: state ? JSON.parse(state.batches_json) : [], jobs: results.map(publicJob) });
+      }
+      const removal = url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)$/);
+      if (!machine && removal && request.method === 'DELETE') {
+        const input = await body(request);
+        if (input.confirm !== true) return json({error:'Confirm removal of this entry and its CapCut draft.'},400);
+        const job = await env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(removal[1]).first();
+        if (!job) return json({error:'Project not found.'},404);
+        if (job.status === 'removed') return json({ok:true});
+        if (job.status === 'delete_queued' || job.status === 'running' && job.phase === 'delete') return json({ok:true,pending:true},202);
+        const result = await env.DB.prepare("UPDATE jobs SET status='delete_queued',stage='delete_queued',phase='delete',message='Removal requested. Your PC will back up and remove the CapCut draft when CapCut is closed.',updated_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND status IN ('ready','failed','delete_failed','awaiting_review','queued')").bind(Date.now(),job.id).run();
+        return result.meta.changes ? json({ok:true,pending:true},202) : json({error:'This project is processing. Wait until it finishes before removing it.'},409);
       }
       if (url.pathname === '/api/jobs' && request.method === 'POST') {
         const state = await env.DB.prepare('SELECT * FROM worker_state WHERE id = 1').first();
@@ -69,17 +80,22 @@ export default {
         return json({ ok: true });
       }
       if (url.pathname === '/api/worker/claim' && request.method === 'POST') {
+        const input = await body(request);
+        const canDelete = Array.isArray(input?.capabilities) && input.capabilities.includes('project-removal-v1') ? 1 : 0;
         const now = Date.now(), token = crypto.randomUUID();
         // One atomic statement: no concurrent claims, including across HTTP retries.
         const job = await env.DB.prepare(`UPDATE jobs SET status='running', lease_token=?, lease_until=?, updated_at=?, attempt=attempt+1
-          WHERE id=(SELECT id FROM jobs WHERE status='queued' OR (status='running' AND lease_until < ?) ORDER BY created_at,id LIMIT 1)
-          AND NOT EXISTS (SELECT 1 FROM jobs WHERE status='running' AND lease_until >= ?) RETURNING *`).bind(token, now + 90000, now, now, now).first();
+          WHERE id=(SELECT id FROM jobs WHERE status='queued' OR (status='delete_queued' AND ?=1) OR (status='running' AND lease_until < ? AND (phase!='delete' OR ?=1)) ORDER BY created_at,id LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM jobs WHERE status='running' AND lease_until >= ?) RETURNING *`).bind(token, now + 90000, now, canDelete, now, canDelete, now).first();
         return json({ job });
       }
       const update = url.pathname.match(/^\/api\/worker\/jobs\/([a-f0-9-]+)$/);
       if (update && request.method === 'POST') {
         const input = await body(request);
         if (!stages.has(input.stage)) throw new Error('Invalid processing stage.');
+        const currentJob = await env.DB.prepare('SELECT phase FROM jobs WHERE id=?').bind(update[1]).first();
+        if (input.stage === 'removed' && currentJob?.phase !== 'delete') return json({error:'This project has no removal request.'},409);
+        if (currentJob?.phase === 'delete' && !['preparing','waiting_for_capcut','removed','failed'].includes(input.stage)) return json({error:'Invalid removal stage.'},409);
         if (jobGuardRequired(input.stage)) {
           const job = await env.DB.prepare('SELECT phase FROM jobs WHERE id=?').bind(update[1]).first();
           if (job?.phase === 'transcribe') return json({ error: 'Approve the transcript before building a montage.' }, 409);
@@ -88,8 +104,8 @@ export default {
           const job = await env.DB.prepare('SELECT phase FROM jobs WHERE id=?').bind(update[1]).first();
           if (job?.phase !== 'transcribe' || !await env.DB.prepare('SELECT job_id FROM transcript_reviews WHERE job_id=?').bind(update[1]).first()) return json({ error: 'Upload the transcript first.' }, 409);
         }
-        const now = Date.now(), status = input.stage === 'ready' ? 'ready' : input.stage === 'failed' ? 'failed' : input.stage === 'awaiting_review' ? 'awaiting_review' : 'running';
-        const result = await env.DB.prepare('UPDATE jobs SET stage=?,status=?,message=?,project_name=?,updated_at=?,lease_until=? WHERE id=? AND lease_token=? AND status=\'running\' AND lease_until>=?').bind(input.stage, status, String(input.message || '').slice(0,1000), typeof input.projectName === 'string' ? input.projectName.slice(0,200) : null, now, now+90000, update[1], input.leaseToken || '', now).run();
+        const now = Date.now(), status = input.stage === 'removed' ? 'removed' : input.stage === 'ready' ? 'ready' : input.stage === 'failed' ? currentJob?.phase === 'delete' ? 'delete_failed' : 'failed' : input.stage === 'awaiting_review' ? 'awaiting_review' : 'running';
+        const result = await env.DB.prepare('UPDATE jobs SET stage=?,status=?,message=?,project_name=COALESCE(?,project_name),updated_at=?,lease_until=? WHERE id=? AND lease_token=? AND status=\'running\' AND lease_until>=?').bind(input.stage, status, String(input.message || '').slice(0,1000), typeof input.projectName === 'string' ? input.projectName.slice(0,200) : null, now, now+90000, update[1], input.leaseToken || '', now).run();
         return result.meta.changes ? json({ ok: true }) : json({ error: 'Job lease lost. Stop processing.' }, 409);
       }
       return json({ error: 'Not found.' }, 404);

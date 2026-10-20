@@ -1,3 +1,4 @@
+import { suggestTitle, retakeResolved } from '../shared/review_metadata.mjs';
 export const AUDIO_RETENTION_MS = 30 * 86400000;
 export class ReviewValidationError extends Error {}
 export const sourceId = value => typeof value === 'string' && /^\d{4}$/.test(value);
@@ -14,16 +15,36 @@ export function validateTranscript(input) {
     if (line.id !== String(index) || !sources.some(s => s.id === line.source) || !Number.isFinite(line.start) || !Number.isFinite(line.end) || line.start < 0 || line.end <= line.start || typeof line.text !== 'string' || !line.text.trim() || line.text.length > 2000 || !Array.isArray(line.uncertain) || line.uncertain.some(w => typeof w !== 'string' || w.length > 200)) throw new ReviewValidationError('Invalid transcript sentence.');
     return { id: line.id, source: line.source, start: line.start, end: line.end, text: line.text.trim(), uncertain: line.uncertain, accepted: false, excluded: false };
   });
-  return { sources, lines };
+  const retakes = input.retakes || [];
+  if (!Array.isArray(retakes) || retakes.length > 60) throw new ReviewValidationError('Invalid retake suggestions.');
+  const ids = new Set();
+  const groups = retakes.map(g => {
+    if (!g || !Array.isArray(g.lineIds) || g.lineIds.length !== 2 || g.lineIds[0] === g.lineIds[1] || g.lineIds.some(id=>!lines.some(l=>l.id===id)) || g.id !== `retake-${g.lineIds.join('-')}` || ids.has(g.id) || !Number.isFinite(g.similarity) || g.similarity < 0 || g.similarity > 1) throw new ReviewValidationError('Invalid retake suggestion.');
+    ids.add(g.id);
+    return {id:g.id,lineIds:g.lineIds,similarity:g.similarity,keepLineIds:null};
+  });
+  return { sources, lines, projectTitle:suggestTitle(lines), retakes:groups,
+    ...(Array.isArray(input.retakes) ? {retakeReviewVersion:1} : {}) };
 }
 
-export function applyReview(document, edits) {
+export function applyReview(document, edits, metadata = {}) {
   if (!Array.isArray(edits) || edits.length !== document.lines.length) throw new ReviewValidationError('Review every sentence.');
-  return { ...document, lines: document.lines.map((line, i) => {
+  const lines = document.lines.map((line, i) => {
     const edit = edits[i];
     if (!edit || edit.id !== line.id || typeof edit.text !== 'string' || !edit.text.trim() || edit.text.length > 2000 || typeof edit.accepted !== 'boolean' || typeof edit.excluded !== 'boolean') throw new ReviewValidationError('Invalid sentence review.');
     return { ...line, text: edit.text.trim(), accepted: edit.accepted, excluded: edit.excluded };
-  }) };
+  });
+  const title = metadata.projectTitle ?? document.projectTitle ?? suggestTitle(lines);
+  if (typeof title !== 'string' || !title.trim() || title.trim().length > 80 || /[\u0000-\u001f\u007f\\/:*?"<>|]/.test(title)) throw new ReviewValidationError('Use a project title of 1–80 characters without filename symbols such as / or :');
+  const decisions = metadata.retakes;
+  if (decisions !== undefined && (!Array.isArray(decisions) || decisions.length !== (document.retakes || []).length || new Set(decisions.map(g=>g.id)).size !== decisions.length || decisions.some(g=>!(document.retakes || []).some(old=>old.id===g.id)))) throw new ReviewValidationError('Invalid retake decisions.');
+  const retakes = (document.retakes || []).map(group => {
+    const decision = decisions?.find(g=>g.id===group.id);
+    const keep = decision ? decision.keepLineIds : group.keepLineIds;
+    if (keep !== null && (!Array.isArray(keep) || new Set(keep).size!==keep.length || keep.some(id=>!group.lineIds.includes(id)))) throw new ReviewValidationError('Invalid retake choice.');
+    return {...group,keepLineIds:keep};
+  });
+  return {...document,lines,projectTitle:title.trim(),retakes};
 }
 
 export async function reviewRoutes(request, env, url, machine, json, body) {
@@ -76,7 +97,8 @@ export async function reviewRoutes(request, env, url, machine, json, body) {
 
   if (action === 'review' && request.method === 'GET' && row) {
     if (machine && (job.phase !== 'montage' || !row.approved_at)) return json({ error: 'Transcript not approved.' }, 409);
-    return json({ ...JSON.parse(row.document), revision: row.revision, approved: !!row.approved_at, audioExpiresAt: row.created_at + AUDIO_RETENTION_MS });
+    const document = JSON.parse(row.document);
+    return json({ ...document, projectTitle: document.projectTitle || suggestTitle(document.lines,job.batch_name), retakes:document.retakes || [], revision: row.revision, approved: !!row.approved_at, audioExpiresAt: row.created_at + AUDIO_RETENTION_MS });
   }
   if (action === 'review' && machine && request.method === 'POST' && row && job.phase === 'transcribe') return json({ok:true});
   if (action === 'review' && machine && request.method === 'POST' && job.phase === 'transcribe' && !row) {
@@ -92,7 +114,7 @@ export async function reviewRoutes(request, env, url, machine, json, body) {
     return json({ ok: true });
   }
   if (!machine && action === 'review' && request.method === 'PUT' && row && job.status === 'awaiting_review' && !row.approved_at) {
-    const input = await body(request), document = applyReview(JSON.parse(row.document), input.lines);
+    const input = await body(request), document = applyReview(JSON.parse(row.document), input.lines, input);
     const result = await env.DB.prepare('UPDATE transcript_reviews SET document=?,revision=revision+1 WHERE job_id=? AND revision=? AND approved_at IS NULL').bind(JSON.stringify(document), id, input.revision).run();
     return result.meta.changes ? json({ revision: row.revision + 1 }) : json({ error: 'This review changed on another device. Reload before saving.' }, 409);
   }
@@ -100,6 +122,8 @@ export async function reviewRoutes(request, env, url, machine, json, body) {
     const input = await body(request), document = JSON.parse(row.document);
     if (input.revision !== row.revision) return json({ error: 'Save your latest changes before approving.' }, 409);
     if (document.lines.some(l => !l.excluded && !l.accepted) || !document.lines.some(l => !l.excluded)) throw new ReviewValidationError('Accept every included sentence and keep at least one sentence.');
+    if ((document.retakes || []).some(g=>!retakeResolved(g,document.lines))) throw new ReviewValidationError('Resolve every possible retake before approving. You can keep both takes.');
+    if (!document.projectTitle?.trim()) throw new ReviewValidationError('Save a project title before approving.');
     // A single D1 transaction freezes the review and queues montage generation.
     const results = await env.DB.batch([
       env.DB.prepare('UPDATE transcript_reviews SET approved_at=? WHERE job_id=? AND revision=? AND approved_at IS NULL').bind(Date.now(), id, input.revision),

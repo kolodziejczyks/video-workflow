@@ -1,4 +1,4 @@
-export const stages = new Set(['awaiting_review', 'preparing', 'transcribing', 'planning', 'captions', 'building', 'waiting_for_capcut', 'ready', 'failed']);
+export const stages = new Set(['removed', 'awaiting_review', 'preparing', 'transcribing', 'planning', 'captions', 'building', 'waiting_for_capcut', 'ready', 'failed']);
 export function validateJob(body, batches) {
   if (!body || typeof body.batchId !== 'string') throw new Error('Choose a recording batch.');
   const batch = batches.find(b => b.id === body.batchId);

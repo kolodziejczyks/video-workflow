@@ -57,9 +57,31 @@ async function tick() {
     await update(progress?.stage || current.stage || 'preparing', progress?.message || current.message || '');
   }
 }
+async function runProcessor(command,args,directory,logName){
+  const log=await fs.open(path.join(directory,logName),'a');
+  try{
+    await new Promise((resolve,reject)=>{
+      const env={...process.env,VIDEO_JOB_DIRECTORY:directory};
+      for(const key of ['VIDEO_WORKER_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'])delete env[key];
+      child=spawn(command,args,{cwd:root,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],env});
+      child.stdout.on('data',chunk=>{log.write(chunk).catch(()=>{});});
+      child.stderr.on('data',chunk=>{log.write(chunk).catch(()=>{});});
+      child.once('error',reject);
+      child.once('exit',code=>code===0?resolve():reject(new Error(`Local processor failed (${code}); see ${logName}.`)));
+    });
+  }finally{child=null;await log.close();}
+}
 async function execute(job) {
   current = { ...job, stage: 'preparing' };
   try {
+    if(job.phase==='delete'){
+      const directory=path.join(work,job.id);await fs.mkdir(directory,{recursive:true});
+      await update('preparing','Preparing to back up and remove the CapCut draft.');
+      await runProcessor(process.execPath,[path.join(root,'scripts/remove_batch_project.mjs'),job.id,job.project_name||''],directory,'removal.log');
+      const removed=JSON.parse(await fs.readFile(path.join(directory,'deletion-result.json'),'utf8'));
+      if(removed.jobId!==job.id || removed.status!=='removed')throw new Error('Removal was not verified.');
+      finalizing=true;await tickPromise;await update('removed','CapCut draft removed. Original recordings and backup were kept.');return;
+    }
     await update('preparing', 'Checking the synced batch and staging original recordings.');
     const directory = path.join(work, job.id), media = path.join(directory, 'media');
     const manifest = path.join(directory, 'job.json');
@@ -89,18 +111,7 @@ async function execute(job) {
       if (!review.approved) throw new Error('Transcript approval is required.');
       await fs.writeFile(path.join(directory,'approved-review.json'), JSON.stringify(review));
     }
-    const log = await fs.open(path.join(directory, 'processor.log'), 'a');
-    try {
-      await new Promise((resolve, reject) => {
-        const childEnv = { ...process.env, VIDEO_JOB_DIRECTORY: directory };
-        for (const key of ['VIDEO_WORKER_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']) delete childEnv[key];
-        child = spawn(config.processor[0], [...config.processor.slice(1), manifest], { cwd: root, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
-        child.stdout.on('data', chunk => { log.write(chunk).catch(() => {}); });
-        child.stderr.on('data', chunk => { log.write(chunk).catch(() => {}); });
-        child.once('error', reject);
-        child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Batch processor exited with code ${code}. See the local processor log.`)));
-      });
-    } finally { child = null; await log.close(); }
+    await runProcessor(config.processor[0],[...config.processor.slice(1),manifest],directory,'processor.log');
     // The processor must explicitly attest completion; exit 0 alone is insufficient.
     const result = JSON.parse(await fs.readFile(path.join(directory, 'result.json'), 'utf8'));
     if (result.jobId === job.id && result.status === 'awaiting_review' && job.phase === 'transcribe') {
@@ -135,7 +146,7 @@ try {
     console.log('Worker connected. Waiting for synced batches and draft requests.');
     while (!stopped) {
       if (!busy) {
-        const { job } = await api('/api/worker/claim', {});
+        const { job } = await api('/api/worker/claim', {capabilities:['project-removal-v1']});
         if (job) await execute(job);
       }
       if (!stopped) await delay(5000);

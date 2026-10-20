@@ -42,6 +42,8 @@ if(!state){
   await run(python,[path.join(root,'scripts/transcribe_samples.py'),'--ffmpeg',ffmpeg,'--input',path.join(directory,'media'),'--output',path.join(directory,'transcripts')]);
   if (job.phase === 'transcribe') {
     await run(python,[path.join(root,'scripts/prepare_review.py'),manifest,'--ffmpeg',ffmpeg]);
+    await progress('transcribing','Comparing possible retakes locally for your review.');
+    await run(python,[path.join(root,'scripts/review_suggestions.py'),path.join(directory,'review.json')]);
     await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({jobId:job.id,status:'awaiting_review'}));
     process.exit(0);
   }

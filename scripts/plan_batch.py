@@ -29,7 +29,7 @@ def protect_speech(clips, durations, blocked, padding=.5):
                     reason='Reviewed speech with protected ending; continuous sentences joined')
     return merged
 
-def select_clips(transcripts, target=None):
+def select_clips(transcripts, target=None, deduplicate=True):
     clips = []
     phrases = []
     duration = 0
@@ -39,7 +39,7 @@ def select_clips(transcripts, target=None):
             if not words:
                 continue
             normalized = re.sub(r'[^\w\s]', '', segment['text'].lower()).strip()
-            if not normalized or any(SequenceMatcher(None, normalized, old).ratio() > .88 for old in phrases):
+            if not normalized or (deduplicate and any(SequenceMatcher(None, normalized, old).ratio() > .88 for old in phrases)):
                 continue
             start = max(0, words[0]['start'] - .08)
             end = words[-1]['end']
@@ -49,7 +49,7 @@ def select_clips(transcripts, target=None):
             if target is not None and duration >= target:
                 return clips
             clips.append({'source': source, 'in': start, 'out': end,
-                          'reason': 'Included approved sentence; duration is unrestricted, near-duplicates removed' if target is None else 'Complete speech segment in recording order; not a semantic highlight selection'})
+                          'reason': 'Approved review selection; duration is unrestricted' if target is None else 'Complete speech segment in recording order; not a semantic highlight selection'})
             phrases.append(normalized)
             duration += end - start
     return clips
@@ -66,9 +66,10 @@ if __name__ == '__main__':
         transcript = json.loads((directory/('approved-transcripts' if job.get('phase') == 'montage' else 'transcripts')/f'{media.stem}.json').read_text(encoding='utf-8'))
         transcripts.append((media.name, transcript))
     reviewed = job.get('phase') == 'montage'
-    clips = select_clips(transcripts, None if reviewed else job['targetSeconds'])
+    review = json.loads((directory/'approved-review.json').read_text(encoding='utf-8')) if reviewed else None
+    explicit_retakes = bool(review and review.get('retakeReviewVersion') == 1)
+    clips = select_clips(transcripts, None if reviewed else job['targetSeconds'], deduplicate=not explicit_retakes)
     if reviewed:
-        review = json.loads((directory/'approved-review.json').read_text(encoding='utf-8'))
         blocked = {}
         for line in review['lines']:
             if line['excluded']:
@@ -89,6 +90,6 @@ if __name__ == '__main__':
         raise SystemExit('No timed speech found in this recording batch.')
     (directory/'edit-plan.json').write_text(json.dumps({
         'clips': clips, 'status': 'montage_review_pending', 'subtitle_style': 'reference-montra',
-        'selection_mode': 'approved-speech-deduplicated' if reviewed else 'chronological-speech', 'brief': job['brief'],
+        'selection_mode': 'approved-retake-choices' if explicit_retakes else 'approved-speech-deduplicated' if reviewed else 'chronological-speech', 'brief': job['brief'],
         'brief_applied': False, 'note': 'Creative brief stored for review; this first-pass selector does not interpret it.'
     }, ensure_ascii=False, indent=2), encoding='utf-8')

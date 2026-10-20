@@ -11,10 +11,11 @@ const actual='C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lvedito
 const publishing=process.argv[2]==='--publish';
 const batch=process.env.CAPCUT_BATCH_DIRECTORY;
 const batchJob=batch && !publishing ? JSON.parse(await fs.readFile(path.join(batch,'job.json'),'utf8')) : null;
+const approvedReview=batchJob?.phase==='montage' ? JSON.parse(await fs.readFile(path.join(batch,'approved-review.json'),'utf8')) : null;
 const out=publishing?path.resolve(process.argv[3]):batch?path.join(batch,'build'):path.join(root,'work/reference-style/build-'+new Date().toISOString().replace(/[:.]/g,'-'));
 await fs.mkdir(out,{recursive:true});
 const state=publishing?JSON.parse(await fs.readFile(path.join(out,'state.json'),'utf8')):{
-  name:batch?batchProjectName(batchJob):'Polish Caption Style '+new Date().toISOString().replace(/[:.]/g,'-'),out,sourceDirectory:path.join(out,'drafts','CaptionSource')};
+  name:batch?batchProjectName({...batchJob,projectTitle:approvedReview?.projectTitle}):'Polish Caption Style '+new Date().toISOString().replace(/[:.]/g,'-'),out,sourceDirectory:path.join(out,'drafts','CaptionSource')};
 const drafts=publishing?actual:path.join(out,'drafts');
 await fs.mkdir(drafts,{recursive:true});
 const mediaRoot=path.join(root,'work/tools/ffmpeg-essentials');
