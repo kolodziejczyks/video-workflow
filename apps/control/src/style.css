@@ -36,3 +36,11 @@
 .video-details dl{margin:5px 0 10px;display:grid;grid-template-columns:120px minmax(0,1fr);gap:9px 16px;line-height:1.7}.video-details dt{color:#8e9ca7}.video-details dd{margin:0;overflow-wrap:anywhere;color:#c0cad1}
 .worker-offline{margin:18px 0;padding:15px 18px;border:1px solid #53452f;border-radius:10px;background:#27241e;color:#e3ccaa;font-size:13px;line-height:1.6}
 @media(max-width:680px){.video-card{padding:22px}.video-card h3{font-size:22px}.video-next-step{font-size:15px}.video-card-header{margin-bottom:16px}.video-card-header time{font-size:11px}.video-status{font-size:12px}.video-actions{flex-wrap:wrap;gap:8px}.video-primary{flex:1}.video-details dl{grid-template-columns:1fr;gap:3px}.video-details dd{margin-bottom:9px}}
+
+/* Keep mobile transcript actions at the viewport edge, reserving their measured height. */
+@media(max-width:680px){
+ .transcript-review{padding-bottom:calc(var(--review-toolbar-height,160px) + 16px)}
+ .review-toolbar{position:fixed;inset:auto 0 0;z-index:100;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:12px max(20px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));box-shadow:0 -8px 24px #0004}
+ .review-toolbar>button{min-width:0}
+ .review-toolbar .primary{grid-column:1/-1;width:100%;min-width:0}
+}

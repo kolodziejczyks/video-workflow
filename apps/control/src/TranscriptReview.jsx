@@ -5,6 +5,7 @@ import { suggestTitle, chooseRetake, retakeResolved } from '../shared/review_met
 export default function TranscriptReview({ job, onClose, onApproved }) {
   const [review, setReview] = useState(null), [error, setError] = useState(''), [saving, setSaving] = useState(false), [dirty, setDirty] = useState(false), [playing, setPlaying] = useState(null);
   const panel = useRef(null);
+  const toolbar = useRef(null);
   const audio = useRef(null), stopAt = useRef(0);
   useEffect(() => {
     let live = true;
@@ -18,6 +19,14 @@ export default function TranscriptReview({ job, onClose, onApproved }) {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
+  useEffect(() => {
+    if (!review || !toolbar.current) return;
+    const measure = () => panel.current?.style.setProperty('--review-toolbar-height', `${toolbar.current.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar.current);
+    measure();
+    return () => observer.disconnect();
+  }, [Boolean(review)]);
   function edit(id, changes) {
     setReview(old => ({ ...old, lines: old.lines.map(l => l.id === id ? { ...l, ...changes } : l),
       retakes:old.retakes.map(g=>('text' in changes || 'excluded' in changes) && g.lineIds.includes(id) ? {...g,keepLineIds:null} : g) }));
@@ -81,7 +90,7 @@ export default function TranscriptReview({ job, onClose, onApproved }) {
           <div className="review-actions"><label><input type="checkbox" checked={line.accepted} disabled={saving || line.excluded} onChange={e => edit(line.id,{accepted:e.target.checked})}/> Wording accepted</label><label><input type="checkbox" checked={line.excluded} disabled={saving} onChange={e => edit(line.id,{excluded:e.target.checked})}/> Exclude from montage</label></div>
         </div>)}
       </section>)}
-      <div className="review-toolbar"><button type="button" disabled={saving} onClick={() => { setReview(old => ({...old,lines:old.lines.map(l=>({...l,accepted:l.excluded ? l.accepted : true}))}));setDirty(true); }}>Accept remaining wording</button><button type="button" disabled={saving || !dirty} onClick={() => save()}>Save progress</button><button type="button" className="primary" disabled={saving || remaining > 0 || unresolved > 0 || !review.projectTitle.trim() || !review.lines.some(l=>!l.excluded)} onClick={() => save(true)}>{saving ? 'Saving…' : 'Approve text & create montage'}</button></div>
+      <div ref={toolbar} className="review-toolbar"><button type="button" disabled={saving} onClick={() => { setReview(old => ({...old,lines:old.lines.map(l=>({...l,accepted:l.excluded ? l.accepted : true}))}));setDirty(true); }}>Accept remaining wording</button><button type="button" disabled={saving || !dirty} onClick={() => save()}>Save progress</button><button type="button" className="primary" disabled={saving || remaining > 0 || unresolved > 0 || !review.projectTitle.trim() || !review.lines.some(l=>!l.excluded)} onClick={() => save(true)}>{saving ? 'Saving…' : 'Approve text & create montage'}</button></div>
     </>}
   </section>;
 }

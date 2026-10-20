@@ -4,6 +4,8 @@ Verified against local files and user feedback on 2026-10-19. Read this after `A
 
 ## Continue here
 
+Mobile transcript acceptance bar fix deployed on 2026-10-20 as version 6bb0a3e1-fcbf-45d9-998b-fa3f986256ca. At widths <=680px it is fixed to the viewport bottom, uses safe-area padding and a two-row button grid, and reserves its measured ResizeObserver height beneath the transcript so final lines remain accessible. Desktop retains sticky layout. viewport-fit=cover enables phone safe-area insets. React production build and diff checks pass; no live browser/desktop automation was used. Phone visual confirmation remains pending. The user authorized committing and pushing this mobile fix; the previous v0.1.0 checkpoint was committed and pushed.
+
 Approved caption baseline project: **Polish Caption Style 2026-10-19T20-23-27-855Z**.
 
 It is a 36.6-second native 9:16 draft with seven selected video intervals, 29 caption phrase groups and 272 editable text states. All captions use CapCut's **Montra Regular**, resource `7462281584457125126`. White uppercase letters, dark outline/shadow, chest-level placement, and purple `#8000EE` active-word boxes reproduce the supplied reference treatment. The user reviewed this result and said it looks great. Retain this caption baseline.
