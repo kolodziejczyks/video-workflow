@@ -86,5 +86,6 @@ const top=await fs.readFile(path.join(destination,'draft_content.json'));
 const copy=await fs.readFile(path.join(destination,'Timelines',timeline.main_timeline_id,'draft_content.json'));
 if(!top.equals(copy) || !draft.tracks.some(t=>t.type==='video' && t.segments.length))throw new Error('Native project structural verification failed.');
 if(!top.equals(await fs.readFile(path.join(destination,'template-2.tmp'))))throw new Error('Upload snapshot differs from the native timeline; do not launch upload.');
+if(!top.equals(await fs.readFile(path.join(destination,'Timelines',timeline.main_timeline_id,'template-2.tmp'))))throw new Error('Nested upload snapshot differs from the native timeline; do not launch upload.');
 if(!draft.materials.texts.length || draft.materials.texts.some(t=>t.font_name!=='Montra'))throw new Error('Montra caption verification failed.');
 await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({jobId:job.id,status:'ready',projectName:state.name,directory:destination,nativePlaybackReview:'pending'},null,2));

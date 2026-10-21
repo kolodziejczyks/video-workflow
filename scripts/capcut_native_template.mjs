@@ -55,6 +55,7 @@ export async function applySavedTransition({directory,backupDirectory,sourceDire
   draft.materials.transitions=transitions.filter(t=>!removedIds.has(t.id));
   await write(path.join(directory,'draft_content.json'),draft);await write(timelinePath,draft);
   await write(path.join(directory,'template-2.tmp'),draft);
+  await write(path.join(path.dirname(timelinePath),'template-2.tmp'),draft);
   return {name:template.name,resourceId:template.resource_id,durationSeconds:template.duration/1e6,
     retained,added,shortened,removed,skipped,cutCount:clips.length-1,backupDirectory};
 }
@@ -98,6 +99,7 @@ export async function useSavedFont({directory,fontPath,layoutPath,backupDirector
   draft.update_time=Date.now()*1000;
   await write(contentPath,draft);await write(timelinePath,draft);
   await write(path.join(directory,'template-2.tmp'),draft);
+  await write(path.join(path.dirname(timelinePath),'template-2.tmp'),draft);
   return {font:'Montra',fontResourceId:sample.font_resource_id,textMaterials:draft.materials.texts.length,
     reflowedSegments:positioned,timelineCopiesMatch:(await fs.readFile(contentPath)).equals(await fs.readFile(timelinePath)),backupDirectory};
 }
@@ -199,6 +201,7 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
   // the scaffold's empty snapshot produces a stale packaging input even when
   // the visible timeline is valid.
   await write(path.join(destination,'template-2.tmp'),content);
+  await write(path.join(destination,'Timelines',timelineId,'template-2.tmp'),content);
   const meta=remap(templateMeta);
   meta.draft_id=projectId; meta.draft_name=name;
   meta.draft_root_path=path.resolve(draftsDir); meta.draft_fold_path=destination.replaceAll('\\','/');
@@ -213,6 +216,7 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
   const timeline=await fs.readFile(path.join(destination,'Timelines',timelineId,'draft_content.json'));
   if(!top.equals(timeline)) throw new Error('Top-level and timeline drafts differ');
   if(!top.equals(await fs.readFile(path.join(destination,'template-2.tmp')))) throw new Error('Upload snapshot differs from timeline');
+  if(!top.equals(await fs.readFile(path.join(destination,'Timelines',timelineId,'template-2.tmp')))) throw new Error('Nested upload snapshot differs from timeline');
   return {name,destination,projectId,timelineId,durationSeconds:content.duration/1e6,
     clips:content.tracks.flatMap(t=>t.segments).length,newVersion:content.new_version,
     appVersion:content.platform.app_version,timelineCopiesMatch:true,backupDirectory};
