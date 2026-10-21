@@ -48,7 +48,7 @@ def select_clips(transcripts, target=None, deduplicate=True):
             # Soft duration target: never truncate the final spoken segment.
             if target is not None and duration >= target:
                 return clips
-            clips.append({'source': source, 'in': start, 'out': end,
+            clips.append({'source': source, 'in': start, 'out': end, 'speech_out': end,
                           'reason': 'Approved review selection; duration is unrestricted' if target is None else 'Complete speech segment in recording order; not a semantic highlight selection'})
             phrases.append(normalized)
             duration += end - start

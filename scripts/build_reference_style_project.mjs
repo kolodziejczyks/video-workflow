@@ -3,6 +3,7 @@ import path from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {prepareBatchTransitions} from './saved_transitions.mjs';
 import {batchProjectName} from './batch_project_name.mjs';
 import {Client} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import {StdioClientTransport} from '../work/aiperson-capcut-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
@@ -23,6 +24,7 @@ const mediaBin=path.join(mediaRoot,(await fs.readdir(mediaRoot)).find(n=>n.start
 const client=new Client({name:'reference-style-builder',version:'1.0.0'});
 const transport=new StdioClientTransport({command:process.execPath,args:[path.join(root,'work/aiperson-capcut-mcp/dist/src/index.js')],
  env:{...process.env,CAPCUT_DRAFTS_PATH:drafts,CAPCUT_NATIVE_HELPER:pathToFileURL(path.join(root,'scripts/capcut_native_template.mjs')).href,
+ ...(batch?{CAPCUT_TRANSITION_SOURCE:process.env.CAPCUT_TRANSITION_SOURCE || process.env.CAPCUT_STYLE_SOURCE || path.join(root,'work/templates/approved-caption-style'),CAPCUT_TRANSITION_PLAN:path.join(batch,'edit-plan.json')} : {}),
  PATH:mediaBin+path.delimiter+process.env.PATH},stderr:'pipe'});
 async function call(name,args){const r=await client.callTool({name,arguments:args});if(r.isError)throw new Error(JSON.stringify(r));
  const t=r.content.filter(c=>c.type==='text').map(c=>c.text).join('\n');return JSON.parse(t.slice(t.indexOf('{')));}
@@ -49,11 +51,16 @@ try {
    state.durationSeconds=offset;
  }
  if(publishing){
-   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
+   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH'],{windowsHide:true});
    if(/CapCut\.exe/i.test(stdout))throw new Error('Close CapCut before registering a new project');
  }
+ let sourceDirectory=state.sourceDirectory;
+ if(publishing && batch){
+   const prepared=await prepareBatchTransitions({call,state,backupDirectory:path.join(out,'transition-backups',Date.now().toString())});
+   sourceDirectory=prepared.sourceDirectory;state.transitions=prepared.result;
+ }
  const result=await call('capcut_rebuild_from_native_template',{template_directory:process.env.CAPCUT_NATIVE_TEMPLATE || path.join(root,'work/templates/empty-capcut-9.6'),
-   source_directory:state.sourceDirectory,name:state.name,backup_directory:path.join(out,publishing?'publish-backup':'native-backup')});
+   source_directory:sourceDirectory,name:state.name,backup_directory:path.join(out,publishing?'publish-backup':'native-backup')});
  state[publishing?'registeredProject':'stagedProject']=result;
  await fs.writeFile(path.join(out,'state.json'),JSON.stringify(state,null,2));
  console.log(JSON.stringify(state));
