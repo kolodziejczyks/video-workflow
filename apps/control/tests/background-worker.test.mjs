@@ -11,6 +11,8 @@ test('Windows background wrapper recovers a crashed worker lock but preserves a 
  const wrapper=fileURLToPath(new URL('../../../worker/start-background.ps1',import.meta.url));
  try {
   await fs.mkdir(path.join(root,'worker'),{recursive:true});
+  await fs.copyFile(wrapper,path.join(root,'worker/start-background.ps1'));
+  await fs.copyFile(new URL('../../../worker/launch-background.vbs',import.meta.url),path.join(root,'worker/launch-background.vbs'));
   await fs.mkdir(path.join(root,'work/batches'),{recursive:true});
   await fs.writeFile(path.join(root,'work/worker.env'),'');
   await fs.writeFile(path.join(root,'worker/run.mjs'),`import fs from 'node:fs';
@@ -21,7 +23,7 @@ fs.writeFileSync(lock,String(process.pid),{flag:'wx'});
 if(!fs.existsSync('work/crashed')) {fs.writeFileSync('work/crashed','1');process.exit(7);}
 fs.writeFileSync('work/recovered','1');fs.unlinkSync(lock);
 `);
-  const run=()=>spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',wrapper,'-RootDirectory',root,'-NodePath',process.execPath],{encoding:'utf8',timeout:20000,windowsHide:true,env:{...process.env,PATH:path.join(process.env.SystemRoot,'System32')}});
+  const run=()=>spawnSync(path.join(process.env.SystemRoot,'System32/wscript.exe'),['//B','//NoLogo',path.join(root,'worker/launch-background.vbs'),'worker',process.execPath],{encoding:'utf8',timeout:20000,windowsHide:true,env:{...process.env,PATH:path.join(process.env.SystemRoot,'System32')}});
   let result=run();assert.equal(result.status,0,result.stderr);
   assert.equal(await fs.readFile(path.join(root,'work/crashed'),'utf8'),'1');
   result=run();assert.equal(result.status,0,result.stderr);

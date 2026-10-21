@@ -72,7 +72,7 @@ try {
 } catch(e) { if(e.code!=='ENOENT')throw e; }
 if(!registered){
   while(true){
-    const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);
+    const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH'],{windowsHide:true});
     if(!/CapCut\.exe/i.test(stdout))break;
     await progress('waiting_for_capcut','Draft staged. Close CapCut when convenient to register it.');
     await new Promise(resolve=>setTimeout(resolve,10000));
@@ -85,5 +85,6 @@ const timeline=JSON.parse(await fs.readFile(path.join(destination,'Timelines','p
 const top=await fs.readFile(path.join(destination,'draft_content.json'));
 const copy=await fs.readFile(path.join(destination,'Timelines',timeline.main_timeline_id,'draft_content.json'));
 if(!top.equals(copy) || !draft.tracks.some(t=>t.type==='video' && t.segments.length))throw new Error('Native project structural verification failed.');
+if(!top.equals(await fs.readFile(path.join(destination,'template-2.tmp'))))throw new Error('Upload snapshot differs from the native timeline; do not launch upload.');
 if(!draft.materials.texts.length || draft.materials.texts.some(t=>t.font_name!=='Montra'))throw new Error('Montra caption verification failed.');
 await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({jobId:job.id,status:'ready',projectName:state.name,directory:destination,nativePlaybackReview:'pending'},null,2));
