@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { scanInbox, stableBatches } from './inventory.mjs';
 import {reconnect, temporaryConnectionFailure} from './reconnect.mjs';
 import {observeJobUpload} from './upload-observer.mjs';
+import {uploadThumbnails} from './thumbnails.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = process.argv[2];
@@ -38,9 +39,9 @@ async function hashFile(file) {
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function api(route, input, options = {}) {
   const response = await fetch(new URL(route, base), { method: options.method || 'POST', headers: {
-    'Content-Type': options.audio ? 'audio/mpeg' : 'application/json', ...(current ? { 'X-Worker-Lease': current.lease_token } : {}), ...(options.audio ? { 'Content-Length': String(input.length) } : {}), Authorization: `Bearer ${process.env.VIDEO_WORKER_TOKEN}`,
+    'Content-Type': options.image ? 'image/jpeg' : options.audio ? 'audio/mpeg' : 'application/json', ...(current ? { 'X-Worker-Lease': current.lease_token } : {}), ...(options.audio || options.image ? { 'Content-Length': String(input.length) } : {}), Authorization: `Bearer ${process.env.VIDEO_WORKER_TOKEN}`,
     ...(process.env.CF_ACCESS_CLIENT_ID ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET || '' } : {})
-  }, body: options.method === 'GET' ? undefined : options.audio ? input : JSON.stringify(input), signal: AbortSignal.timeout(15000) });
+  }, body: options.method === 'GET' ? undefined : options.audio || options.image ? input : JSON.stringify(input), signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw Object.assign(new Error(`Control API ${response.status}; check authentication, Access policies and the worker lease.`), {status:response.status});
   return response.json();
 }
@@ -59,6 +60,12 @@ async function tick() {
     await update(progress?.stage || current.stage || 'preparing', progress?.message || current.message || '');
   }
   // Observation must never jeopardize an active processing lease.
+  if (!current && Array.isArray(heartbeat.thumbnailJobs)) {
+    for(const job of heartbeat.thumbnailJobs) {
+      if(!/^[a-f0-9-]{36}$/.test(job.id || ''))continue;
+      try {await uploadThumbnails(path.join(work,job.id),job.id,api);}catch {console.error('Thumbnail upload pending; will retry while idle.');break;}
+    }
+  }
   if (!current && Array.isArray(heartbeat.uploadJobs) && heartbeat.uploadJobs.length) {
     try {
       const observations=[];
@@ -122,6 +129,7 @@ async function execute(job) {
       await fs.writeFile(path.join(directory,'approved-review.json'), JSON.stringify(review));
     }
     await runProcessor(config.processor[0],[...config.processor.slice(1),manifest],directory,'processor.log');
+    try {await uploadThumbnails(directory,job.id,api);}catch {console.error('Thumbnail upload unavailable; video processing continues.');}
     // The processor must explicitly attest completion; exit 0 alone is insufficient.
     const result = JSON.parse(await fs.readFile(path.join(directory, 'result.json'), 'utf8'));
     if (result.jobId === job.id && result.status === 'awaiting_review' && job.phase === 'transcribe') {

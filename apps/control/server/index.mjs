@@ -1,4 +1,5 @@
 import { reviewRoutes, ReviewValidationError } from './review.mjs';
+import { thumbnailRoutes } from './thumbnails.mjs';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { validateJob, validateBatches, stages } from './validation.mjs';
 
@@ -45,6 +46,8 @@ export default {
         if (!email) return json({ error: 'Sign in through Cloudflare Access. Access configuration is required before using this app.' }, 401);
         if (!['GET', 'HEAD'].includes(request.method) && request.headers.get('Origin') !== url.origin) return json({ error: 'Invalid request origin.' }, 403);
       }
+      const thumbnailResponse = await thumbnailRoutes(request, env, url, machine, json, body);
+      if (thumbnailResponse) return thumbnailResponse;
       const reviewResponse = await reviewRoutes(request, env, url, machine, json, body);
       if (reviewResponse) return reviewResponse;
       if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
@@ -78,7 +81,8 @@ export default {
         const input = await body(request), batches = validateBatches(input.batches);
         await env.DB.prepare('INSERT INTO worker_state(id,last_seen,batches_json,message) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,batches_json=excluded.batches_json,message=excluded.message').bind(Date.now(), JSON.stringify(batches), String(input.message || '').slice(0,500)).run();
         const {results: uploadJobs} = await env.DB.prepare("SELECT id,project_name FROM jobs WHERE status='ready' ORDER BY created_at DESC LIMIT 50").all();
-        return json({ ok: true, uploadJobs });
+        const {results:thumbnailJobs} = await env.DB.prepare("SELECT id FROM jobs WHERE status IN ('ready','awaiting_review') ORDER BY created_at DESC LIMIT 20").all();
+        return json({ ok: true, uploadJobs, thumbnailJobs });
       }
       if (url.pathname === '/api/worker/uploads' && request.method === 'POST') {
         const input = await body(request);

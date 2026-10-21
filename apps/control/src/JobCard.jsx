@@ -1,4 +1,5 @@
 import React from 'react';
+import Thumbnails from './Thumbnails.jsx';
 
 const stages={queued:'Waiting for your PC',preparing:'Preparing recordings',transcribing:'Transcribing your recordings',planning:'Arranging your clips',captions:'Adding captions',building:'Creating your CapCut draft',waiting_for_capcut:'Close CapCut on your PC to continue'};
 const montageStages={queued:['Text approved · Waiting to create your video','Your PC will create the video from your approved text and selected takes.'],preparing:['Text approved · Preparing your video','Checking the recordings for your approved text and selected takes.'],planning:['Arranging your approved clips','Matching your approved text to the audio and arranging the selected takes.'],captions:['Adding captions to your video','Creating captions from the text you approved.'],building:['Creating your CapCut draft','Putting your selected clips and approved captions together.'],waiting_for_capcut:['Your video is built · Close CapCut to continue','Close CapCut on your PC so your new draft can be added.']};
@@ -28,6 +29,7 @@ export default function JobCard({job,onReview,onRetry,onRemove,removing}) {
    <h3>{view.title}</h3>
    <p className="video-next-step">{view.description}</p>
    {stale && <p className="video-stale">{job.upload_status==='recorded_complete'?'Last confirmed upload.':'Upload status pending.'} Waiting for a fresh PC update.</p>}
+   {job.phase!=='delete' && (job.phase==='montage' || ['awaiting_review','ready'].includes(job.status)) && <Thumbnails jobId={job.id}/>}
    <div className="video-actions">
      {job.status==='awaiting_review' && <button className="video-primary" onClick={()=>onReview(job)}>Review text <span aria-hidden="true">→</span></button>}
      {job.status==='failed' && <button className="video-primary" onClick={()=>onRetry(job)}>Try again <span aria-hidden="true">↗</span></button>}

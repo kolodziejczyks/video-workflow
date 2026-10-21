@@ -45,6 +45,10 @@ if(!state){
     await run(python,[path.join(root,'scripts/prepare_review.py'),manifest,'--ffmpeg',ffmpeg]);
     await progress('transcribing','Comparing possible retakes locally for your review.');
     await run(python,[path.join(root,'scripts/review_suggestions.py'),path.join(directory,'review.json')]);
+    try {
+      await progress('transcribing','Finding thumbnail ideas with natural expressions.');
+      await run(path.join(root,'work/tools/thumbnail-python/Scripts/python.exe'),[path.join(root,'scripts/thumbnail_candidates.py'),manifest,'--ffmpeg',ffmpeg,'--model',path.join(root,'work/models/thumbnail-face/face_landmarker.task')]);
+    } catch { console.error('Thumbnail suggestions unavailable; transcript review continues.'); }
     await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({jobId:job.id,status:'awaiting_review'}));
     process.exit(0);
   }
