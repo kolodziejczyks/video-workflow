@@ -3,6 +3,8 @@
 Verified against local files and user feedback on 2026-10-19. Read this after `AGENTS.md`; conversation history is not required.
 
 ## Continue here
+New feature request (2026-10-21): [#8 — Choose and download thumbnail frames from recordings in Cutroom](https://github.com/kolodziejczyks/video-workflow/issues/8). The user does not currently need full video preview; finding a good thumbnail moment is the concrete pain point. Proposed first version: a small gallery of varied still frames from staged recordings, larger inspection and individual full-resolution image downloads for editing elsewhere. Issue records the scope; implementation has not started. Keep extraction independent of CapCut/export, originals unchanged and images behind existing authentication. No desktop action, worker restart or automation resumption is authorized by this planning step.
+
 Completed issue (2026-10-21): [#4 — Validate transcript review, titles and draft removal on mobile and in CapCut](https://github.com/kolodziejczyks/video-workflow/issues/4) is closed as completed at the user's explicit instruction, "accept it as done". This accepts the existing functionality and ends the validation task; do not ask the user to repeat its checklist. No exact new job/project or per-scenario test results were supplied, and no draft was removed during this session. Existing caption/transition acceptance remains valid; montage/cuts and publishing remain separate. The initialization consumer remains paused.
 
 
