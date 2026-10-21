@@ -2,6 +2,7 @@
 
 Start with [the current handoff](docs/STATUS.md). Read [local setup](docs/local-setup.md) only when running or changing the tooling. Update the handoff when the active project or approval state changes; replace stale facts instead of appending a history log.
 
+- Commit and push completed task changes after validation, including the updated handoff. Keep unrelated work out of the commit.
 - Do not use desktop control, mouse/keyboard automation, screenshots of the live desktop, or launch the app unless the user explicitly requests it. Use MCP and repository tools. User-provided screenshots and reference videos may be analyzed.
 - Use CapCut MCP for native project editing. FFmpeg can inspect media, extract reference frames, or support transcription; its previews do not prove that CapCut can render a project.
 - Build new native projects from the empty CapCut 9.6 template. The upstream server's from-scratch draft was rejected; the native-template repair opened successfully, and the user confirmed playback, speed, and sound.
