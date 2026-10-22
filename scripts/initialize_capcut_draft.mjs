@@ -107,13 +107,16 @@ try {
   const clicked = await act('double-click', home, HOME_CLASS_PREFIX, ['-X', String(target.x), '-Y', String(target.y)]);
   if (!clicked.sent) throw new Error('Click injection was not accepted.');
 
-  // 4. Wait for exactly this project to open in the editor.
-  let editor = null;
+  // 4. Wait for exactly this project to open in the editor. CapCut shows short-lived unnamed
+  //    windows while switching pages; only a window that persists for several seconds is a dialog.
+  let editor = null, extra = 0;
+  const DIALOG_PERSISTENCE = 4;
   for (let i = 0; i < 60 && !editor; i++) {
     await sleep(1000);
     report = await observe();
     const view = classifyWindows(report.windows);
-    if (view.others.length) throw new Error(`A dialog or extra window appeared ('${view.others[0].title}'); leaving everything as is.`);
+    extra = view.others.length ? extra + 1 : 0;
+    if (extra >= DIALOG_PERSISTENCE) throw new Error(`A dialog or extra window stayed open ('${view.others[0].title}'); leaving everything as is.`);
     if (view.editor && await exists(locked)) editor = view.editor;
   }
   if (!editor) {
@@ -131,13 +134,15 @@ try {
   const closed = await act('close-window', editor, editor.role);
   if (!closed.posted) throw new Error('Close request was not delivered.');
   let backHome = null;
+  extra = 0;
   for (let i = 0; i < 60 && !backHome; i++) {
     await sleep(1000);
     report = await observe();
     const view = classifyWindows(report.windows);
-    if (view.others.length) throw new Error(`A dialog appeared while closing ('${view.others[0].title}'); leaving it for the user.`);
+    extra = view.others.length ? extra + 1 : 0;
+    if (extra >= DIALOG_PERSISTENCE) throw new Error(`A dialog stayed open while closing ('${view.others[0].title}'); leaving it for the user.`);
     if (!report.windows.length) throw new Error('CapCut has no window; it may have exited instead of returning home.');
-    if (view.home && !view.editor && !(await exists(locked))) backHome = view.home;
+    if (view.home && !view.editor && !view.others.length && !(await exists(locked))) backHome = view.home;
   }
   if (!backHome) throw new Error('The editor did not return to the home screen within 60 s.');
   await sleep(3000);
