@@ -5,7 +5,12 @@ import crypto from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {planSavedTransitions,SAVED_TRANSITION_ID} from './saved_transitions.mjs';
-const load = async p => JSON.parse(await fs.readFile(p, 'utf8'));
+// CapCut's index and metadata carry 19-digit cloud IDs that JSON.parse would round. Keep them
+// as tagged strings in memory and emit them as bare digits again on write.
+const BIG = '__CUTROOM_BIG__';
+export const parseBig = text => JSON.parse(text.replace(/(:\s*)(-?\d{17,})(?=\s*[,}\]])/g, `$1"${BIG}$2"`));
+export const stringifyBig = value => JSON.stringify(value).replace(new RegExp(`"${BIG}(-?\\d+)"`, 'g'), '$1');
+const load = async p => parseBig(await fs.readFile(p, 'utf8'));
 const uid = () => crypto.randomUUID().toUpperCase();
 export async function applySavedTransition({directory,backupDirectory,sourceDirectory=process.env.CAPCUT_TRANSITION_SOURCE}) {
   const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH'],{windowsHide:true});
@@ -118,7 +123,7 @@ export async function styleReferenceText({directory,fontPath,highlightedIds}) {
 }
 async function write(p, value) {
   const temp = `${p}.${process.pid}.repair.tmp`;
-  await fs.writeFile(temp, JSON.stringify(value));
+  await fs.writeFile(temp, stringifyBig(value));
   await fs.rename(temp, p);
 }
 export async function capcutClosed() {

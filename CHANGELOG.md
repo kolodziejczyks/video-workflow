@@ -2,7 +2,7 @@
 
 ## Unreleased — 2026-10-22
 
-Worker-driven draft initialization (issue #7): `scripts/initialize_capcut_draft.mjs` opens one exact registered draft on the CapCut home screen by OCR-located card, lets the editor load, closes it to return home and records returned-home, with read-only observation before every guarded action; `desktopInitialization: "worker"` runs it from the upload launcher, and `reset-opening` recovers an interrupted attempt. The first live run is still pending.
+Worker-driven draft initialization (issue #7): `scripts/initialize_capcut_draft.mjs` opens one exact registered draft on the CapCut home screen by OCR-located card, lets the editor load, closes it to return home and records returned-home, with read-only observation before every guarded action; `desktopInitialization: "worker"` runs it from the upload launcher, and `reset-opening` recovers an interrupted attempt. The first live run on 2026-10-22 opened and initialized the exact draft (timeline media size populated); worker mode is now enabled on the workstation.
 
 Safety hardening from a repository-wide review; no feature changes.
 

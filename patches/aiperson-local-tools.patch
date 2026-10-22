@@ -9,6 +9,18 @@ index 064f4ba..bd039f3 100644
 -        message: `Launched CapCut executable from: ${exePath}`
 +        message: `Launched CapCut executable from: ${exePath}`,
 +        pid: child.pid
+diff --git a/src/capcut/paths.ts b/src/capcut/paths.ts
+index 2d4ccc7..bb09312 100644
+--- a/src/capcut/paths.ts
++++ b/src/capcut/paths.ts
+@@ -73 +73,2 @@ export class CapCutPathResolver {
+-      return JSON.parse(content) as RootMetaInfo;
++      // Local extension: 19-digit cloud IDs exceed Number precision; keep them as tagged strings.
++      return JSON.parse(content.replace(/(:\s*)(-?\d{17,})(?=\s*[,}\]])/g, '$1"__CUTROOM_BIG__$2"')) as RootMetaInfo;
+@@ -88 +89,2 @@ export class CapCutPathResolver {
+-    const jsonStr = JSON.stringify(meta);
++    // Local extension: restore tagged big integers as bare digits.
++    const jsonStr = JSON.stringify(meta).replace(/"__CUTROOM_BIG__(-?\d+)"/g, '$1');
 diff --git a/src/index.ts b/src/index.ts
 index 7afd711..93739d5 100644
 --- a/src/index.ts
