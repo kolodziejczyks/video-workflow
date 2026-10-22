@@ -4,10 +4,11 @@ param(
     [Parameter(Mandatory)][int]$ExpectedPid,
     [Parameter(Mandatory)][string]$ExpectedClassPrefix,
     [Parameter(Mandatory)][string]$ExpectedRolePrefix,
-    [int]$X = -1,
-    [int]$Y = -1,
+    [int]$X = [int]::MinValue,
+    [int]$Y = [int]::MinValue,
     [int]$MinimumIdleMs = 3000
 )
+# Screen coordinates can be negative on a monitor left of or above the primary one.
 # Three guarded desktop actions on one verified CapCut window. Every action re-reads the window
 # by handle, PID and class immediately before acting; nothing is remembered between runs.
 # double-click injects two left clicks at a point inside the verified foreground window and
@@ -73,7 +74,7 @@ switch ($Mode) {
         @{ window = (Read-Window) } | ConvertTo-Json -Depth 4 -Compress
     }
     'double-click' {
-        if ($X -lt 0 -or $Y -lt 0) { throw 'Coordinates are required.' }
+        if ($X -eq [int]::MinValue -or $Y -eq [int]::MinValue) { throw 'Coordinates are required.' }
         $idle = Get-IdleMs
         if ($idle -lt $MinimumIdleMs) { throw "User input $idle ms ago; refusing to inject clicks." }
         if (-not $w.foreground) { throw 'The verified window is not in the foreground.' }
