@@ -41,6 +41,7 @@ public static class CapCutAct {
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("kernel32.dll")] public static extern uint GetTickCount();
@@ -81,12 +82,17 @@ switch ($Mode) {
         if ($X -lt $w.left -or $X -ge ($w.left + $w.width) -or $Y -lt $w.top -or $Y -ge ($w.top + $w.height)) { throw 'Point is outside the verified window.' }
         $p = New-Object CapCutAct+POINT; [CapCutAct]::GetCursorPos([ref]$p) | Out-Null
         [CapCutAct]::SetCursorPos($X, $Y) | Out-Null; Start-Sleep -Milliseconds 150
-        $inputs = New-Object 'CapCutAct+INPUT[]' 4
-        for ($i = 0; $i -lt 2; $i++) { $inputs[2*$i].mi.dwFlags = 0x0002; $inputs[2*$i+1].mi.dwFlags = 0x0004 }
-        $sent = [CapCutAct]::SendInput(4, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf([type][CapCutAct+INPUT]))
+        # mouse_event needs no struct marshalling: indexing a PowerShell struct array yields copies,
+        # so flags set on SendInput entries never reach the array and the clicks are silently empty.
+        $q = New-Object CapCutAct+POINT; [CapCutAct]::GetCursorPos([ref]$q) | Out-Null
+        if ($q.X -ne $X -or $q.Y -ne $Y) { throw "Cursor could not be placed at $X,$Y (it is at $($q.X),$($q.Y))." }
+        for ($i = 0; $i -lt 2; $i++) {
+            [CapCutAct]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 40
+            [CapCutAct]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80
+        }
         Start-Sleep -Milliseconds 300
         [CapCutAct]::SetCursorPos($p.X, $p.Y) | Out-Null
-        @{ sent = ($sent -eq 4); x = $X; y = $Y; window = $w } | ConvertTo-Json -Depth 4 -Compress
+        @{ sent = $true; x = $X; y = $Y; window = $w } | ConvertTo-Json -Depth 4 -Compress
     }
     'close-window' {
         $posted = [CapCutAct]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)

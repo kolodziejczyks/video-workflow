@@ -116,7 +116,11 @@ try {
     if (view.others.length) throw new Error(`A dialog or extra window appeared ('${view.others[0].title}'); leaving everything as is.`);
     if (view.editor && await exists(locked)) editor = view.editor;
   }
-  if (!editor) throw new Error('The editor did not open this project within 60 s; request stays "opening".');
+  if (!editor) {
+    const after = path.join(evidence, `after-click-${stamp()}.png`);
+    try { await observe(after); } catch {}
+    throw new Error(`The editor did not open this project within 60 s; request stays "opening". Evidence: ${after}`);
+  }
   await log('editor-open', {window: editor.handle, page: editor.role, title: editor.title});
   if (!editor.role) throw new Error('The editor window reports no page type; not closing it.');
   const otherLocked = (await lockedProjects()) - 1;
