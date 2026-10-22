@@ -6,6 +6,8 @@ param(
 # No input is sent and no window state is changed.
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -42,7 +44,9 @@ function Get-CapCutWindows {
             $t = New-Object System.Text.StringBuilder 512; [CapCutObserve]::GetWindowText($h, $t, 512) | Out-Null
             $c = New-Object System.Text.StringBuilder 256; [CapCutObserve]::GetClassName($h, $c, 256) | Out-Null
             $r = New-Object CapCutObserve+RECT; [CapCutObserve]::GetWindowRect($h, [ref]$r) | Out-Null
-            $list.Add([pscustomobject]@{ handle = [int64]$h; pid = [int]$owner; title = $t.ToString(); class = $c.ToString();
+            # Win32 reports the generic Qt class; the QML page type (HomePageX_..., editor) is only visible through UI Automation.
+            $role = ''; try { $role = [System.Windows.Automation.AutomationElement]::FromHandle($h).Current.ClassName } catch { $role = '' }
+            $list.Add([pscustomobject]@{ handle = [int64]$h; pid = [int]$owner; title = $t.ToString(); class = $c.ToString(); role = $role;
                 left = $r.Left; top = $r.Top; width = ($r.Right - $r.Left); height = ($r.Bottom - $r.Top);
                 minimized = [CapCutObserve]::IsIconic($h); foreground = ($fg -eq $h) })
         }

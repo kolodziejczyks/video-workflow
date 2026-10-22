@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {classifyWindows, homeReady, findDraftCard, toScreen} from '../../../worker/home-screen.mjs';
 
-const home={handle:1,pid:4524,class:'HomePageX_QMLTYPE_190',title:'CapCut',left:0,top:0,width:2560,height:1504,minimized:false,foreground:true};
-const editor={handle:2,pid:4524,class:'MainWindow_QMLTYPE_7',title:'AI · Google - draft e6e8d6f8',left:0,top:0,width:2560,height:1504,minimized:false,foreground:true};
-const dialog={handle:3,pid:4524,class:'QWidget',title:'Save project?',left:900,top:600,width:400,height:200,minimized:false,foreground:true};
+const home={handle:1,pid:4524,class:'Qt622QWindowIcon',role:'HomePageX_QMLTYPE_190',title:'CapCut',left:0,top:0,width:2560,height:1504,minimized:false,foreground:true};
+const editor={handle:2,pid:4524,class:'Qt622QWindowIcon',role:'MainWindow_QMLTYPE_7',title:'AI · Google - draft e6e8d6f8',left:0,top:0,width:2560,height:1504,minimized:false,foreground:true};
+const dialog={handle:3,pid:4524,class:'Qt622QWindow',role:'',title:'Save project?',left:900,top:600,width:400,height:200,minimized:false,foreground:true};
 
 test('home readiness requires one idle home window, no editor, no dialog and no open project',()=>{
   assert.equal(homeReady({windows:[home],lockedProjects:0,idleMs:10000}).ok,true);

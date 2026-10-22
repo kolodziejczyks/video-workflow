@@ -2,10 +2,13 @@
 // exact draft card is on an OCR'd home screen. Nothing here touches the desktop.
 export const HOME_CLASS_PREFIX = 'HomePageX';
 
+// `role` is the QML page type seen through UI Automation (HomePageX_QMLTYPE_190 for home);
+// `class` is the generic Win32 Qt class and cannot tell pages apart.
+const page = w => w.role || '';
 export function classifyWindows(windows) {
   const visible = (windows || []).filter(w => w && w.width > 100 && w.height > 100);
-  const home = visible.filter(w => w.class?.startsWith(HOME_CLASS_PREFIX) && w.title === 'CapCut');
-  const editors = visible.filter(w => !w.class?.startsWith(HOME_CLASS_PREFIX) && w.width >= 800 && w.height >= 500);
+  const home = visible.filter(w => page(w).startsWith(HOME_CLASS_PREFIX) && w.title === 'CapCut');
+  const editors = visible.filter(w => !page(w).startsWith(HOME_CLASS_PREFIX) && w.width >= 800 && w.height >= 500);
   const others = visible.filter(w => !home.includes(w) && !editors.includes(w));
   return {home: home[0] || null, homeCount: home.length, editor: editors[0] || null, editorCount: editors.length, others};
 }

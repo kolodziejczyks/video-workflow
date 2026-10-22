@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][int64]$Handle,
     [Parameter(Mandatory)][int]$ExpectedPid,
     [Parameter(Mandatory)][string]$ExpectedClassPrefix,
+    [Parameter(Mandatory)][string]$ExpectedRolePrefix,
     [int]$X = -1,
     [int]$Y = -1,
     [int]$MinimumIdleMs = 3000
@@ -12,6 +13,8 @@ param(
 # double-click injects two left clicks at a point inside the verified foreground window and
 # restores the cursor; close-window posts WM_CLOSE (the window's own close control), never a kill.
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -50,9 +53,11 @@ function Read-Window {
     if ([int]$owner -ne $ExpectedPid) { throw "Window belongs to PID $owner, expected $ExpectedPid." }
     $c = New-Object System.Text.StringBuilder 256; [CapCutAct]::GetClassName($h, $c, 256) | Out-Null
     if (-not $c.ToString().StartsWith($ExpectedClassPrefix)) { throw "Window class '$($c.ToString())' is not '$ExpectedClassPrefix*'." }
+    $role = ''; try { $role = [System.Windows.Automation.AutomationElement]::FromHandle($h).Current.ClassName } catch { $role = '' }
+    if (-not $role.StartsWith($ExpectedRolePrefix)) { throw "Window page '$role' is not '$ExpectedRolePrefix*'." }
     $t = New-Object System.Text.StringBuilder 512; [CapCutAct]::GetWindowText($h, $t, 512) | Out-Null
     $r = New-Object CapCutAct+RECT; [CapCutAct]::GetWindowRect($h, [ref]$r) | Out-Null
-    return [pscustomobject]@{ handle = $Handle; pid = [int]$owner; class = $c.ToString(); title = $t.ToString();
+    return [pscustomobject]@{ handle = $Handle; pid = [int]$owner; class = $c.ToString(); role = $role; title = $t.ToString();
         left = $r.Left; top = $r.Top; width = ($r.Right - $r.Left); height = ($r.Bottom - $r.Top);
         visible = [CapCutAct]::IsWindowVisible($h); minimized = [CapCutAct]::IsIconic($h); foreground = ([CapCutAct]::GetForegroundWindow() -eq $h) }
 }

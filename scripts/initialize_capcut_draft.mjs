@@ -42,9 +42,9 @@ async function observe(imagePath) {
   report.lines = asArray(report.lines).map(line => ({...line, words: asArray(line.words)}));
   return report;
 }
-async function act(mode, window, extra = []) {
+async function act(mode, window, rolePrefix, extra = []) {
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts/capcut_home_act.ps1'),
-    '-Mode', mode, '-Handle', String(window.handle), '-ExpectedPid', String(window.pid), '-ExpectedClassPrefix', window.class, ...extra];
+    '-Mode', mode, '-Handle', String(window.handle), '-ExpectedPid', String(window.pid), '-ExpectedClassPrefix', window.class, '-ExpectedRolePrefix', rolePrefix, ...extra];
   const {stdout} = await run(powershell, args, {windowsHide: true, timeout: 30000});
   return JSON.parse(stdout);
 }
@@ -88,14 +88,14 @@ try {
   if (dryRun) process.exit(0);
 
   // 3. Bring the home window forward, re-verify, persist uncertainty, then double-click the cover.
-  const activated = await act('activate', home);
+  const activated = await act('activate', home, HOME_CLASS_PREFIX);
   if (!activated.window?.foreground) throw new Deferred('Could not bring the CapCut home window to the foreground.');
   report = await observe();
   const again = homeReady({windows: report.windows, lockedProjects: await lockedProjects(), idleMs: report.idleMs});
   if (!again.ok || again.home.handle !== home.handle) throw new Deferred(again.reason || 'Home window changed before clicking.');
   await beginOpening(root, jobId);
   await log('begin-opening', {projectId: project.projectId});
-  const clicked = await act('double-click', home, ['-X', String(target.x), '-Y', String(target.y)]);
+  const clicked = await act('double-click', home, HOME_CLASS_PREFIX, ['-X', String(target.x), '-Y', String(target.y)]);
   if (!clicked.sent) throw new Error('Click injection was not accepted.');
 
   // 4. Wait for exactly this project to open in the editor.
@@ -108,13 +108,14 @@ try {
     if (view.editor && await exists(locked)) editor = view.editor;
   }
   if (!editor) throw new Error('The editor did not open this project within 60 s; request stays "opening".');
-  await log('editor-open', {window: editor.handle, class: editor.class, title: editor.title});
+  await log('editor-open', {window: editor.handle, page: editor.role, title: editor.title});
+  if (!editor.role) throw new Error('The editor window reports no page type; not closing it.');
   const otherLocked = (await lockedProjects()) - 1;
   if (otherLocked > 0) throw new Error('Another project is also marked open; not closing anything.');
   await sleep(10000); // Let the editor finish loading media and write its state.
 
   // 5. Close the editor through its own close control and wait for the home screen.
-  const closed = await act('close-window', editor);
+  const closed = await act('close-window', editor, editor.role);
   if (!closed.posted) throw new Error('Close request was not delivered.');
   let backHome = null;
   for (let i = 0; i < 60 && !backHome; i++) {
