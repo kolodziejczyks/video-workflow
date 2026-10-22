@@ -10,7 +10,7 @@ Safety hardening from a repository-wide review; no feature changes.
 - The background wrapper recovers an old empty lock, treats a reused lock PID that is not Node as stale, logs worker exit codes, and launches the worker with absolute paths so it is visible to the related-process scan.
 - The upload launcher correlates CapCut ownership with the PID reported by the patched MCP `capcut_open_app`, falling back to a launch-time window only after PID correlation had its chance.
 
-Validation: 40 JavaScript tests, six planner tests and three thumbnail tests pass. The live worker still runs the previous code until an explicitly authorized restart; processor, MCP and wrapper changes apply to future child processes.
+Validation: 40 JavaScript tests, six planner tests and three thumbnail tests pass. The live worker was restarted with explicit authorization and connected through the new wrapper; a real launch should confirm which ownership rule fires.
 
 ## v0.1.0 — 2026-10-20
 
