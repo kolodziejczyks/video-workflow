@@ -34,7 +34,9 @@ else {
   // Record ownership only for the instance this job launched, never an existing app.
   if(/^[a-f0-9-]{36}$/i.test(jobId)) {
    let rule=null;
-   for(let attempt=0;attempt<15 && !rule;attempt++) {
+   // CapCut re-launches itself through short-lived processes; on this workstation the home window
+   // appeared 25 s after the spawn with its intermediate parent already exited, so keep polling for 90 s.
+   for(let attempt=0;attempt<90 && !rule;attempt++) {
     const {stdout}=await promisify(execFile)('C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(root,'scripts/capcut_upload_process.ps1')],{windowsHide:true});
     const {processInfo,lockedProjects}=JSON.parse(stdout);
     // Prefer exact PID correlation; accept the launch time window only after PID correlation had its chance.
