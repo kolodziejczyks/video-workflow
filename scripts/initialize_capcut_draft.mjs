@@ -69,10 +69,16 @@ try {
   if (!project || project.projectId !== request.projectId || project.name !== request.projectName) throw new Error('Registered project does not match the initialization request.');
   const locked = path.join(project.destination, '.locked');
 
-  // 1. The home screen must be the only CapCut window and the desktop must be idle.
-  let report = await observe();
-  const lockedCount = await lockedProjects();
-  const ready = homeReady({windows: report.windows, lockedProjects: lockedCount, idleMs: report.idleMs});
+  // 1. The home screen must be the only CapCut window and the desktop must be idle. A manual run
+  //    starts right after a keystroke, so wait up to 20 s for idle; a dry run sends no input.
+  const minimumIdleMs = dryRun ? 0 : 3000;
+  let report, ready;
+  for (let i = 0; i < 20; i++) {
+    report = await observe();
+    ready = homeReady({windows: report.windows, lockedProjects: await lockedProjects(), idleMs: report.idleMs, minimumIdleMs});
+    if (ready.ok || !/actively using/.test(ready.reason)) break;
+    await sleep(1000);
+  }
   if (!ready.ok) throw new Deferred(ready.reason);
   const home = ready.home;
 
@@ -91,7 +97,7 @@ try {
   const activated = await act('activate', home, HOME_CLASS_PREFIX);
   if (!activated.window?.foreground) throw new Deferred('Could not bring the CapCut home window to the foreground.');
   report = await observe();
-  const again = homeReady({windows: report.windows, lockedProjects: await lockedProjects(), idleMs: report.idleMs});
+  const again = homeReady({windows: report.windows, lockedProjects: await lockedProjects(), idleMs: report.idleMs, minimumIdleMs});
   if (!again.ok || again.home.handle !== home.handle) throw new Deferred(again.reason || 'Home window changed before clicking.');
   await beginOpening(root, jobId);
   await log('begin-opening', {projectId: project.projectId});
