@@ -161,6 +161,23 @@ The Codex desktop app and computer must stay running for the scheduled-agent con
 
 Keep Codex running, but close any pre-existing manually opened CapCut instance before the next build: registration waits for CapCut to exit, and cleanup never adopts a manually opened instance. Subsequent worker-owned instances use the existing guarded cleanup. Interactive and recurring-agent initialization both have user-confirmed mobile outcomes; the recurring consumer remains paused pending the less intrusive follow-up.
 
+### On-demand draft initialization from the PC (worker-driven)
+
+`scripts/initialize_capcut_draft.mjs <job-uuid> [--dry-run]` performs the verified open → return-home sequence for one exact registered draft without any Codex run. It is the replacement for the paused recurring consumer and runs only when something asks for it: the upload launcher runs it once right after a new draft's CapCut home screen appears when ignored `worker/config.local.json` sets `desktopInitialization: "worker"`, and it can be run by hand at any time for a pending request. `"codex"` keeps the old queue-only behavior.
+
+How it works, in order, with every step observed before acting:
+
+1. `scripts/capcut_home_observe.ps1` (read-only) enumerates visible CapCut windows, the user's idle time and, when asked, captures the largest CapCut window and reads it with Windows' built-in OCR engine. The Qt home window exposes nothing through UI Automation, so text is the only runtime locator.
+2. The home screen must be the only CapCut window, its class must start with `HomePageX`, no project may carry a `.locked` marker and the user must have been idle for three seconds; otherwise the run is deferred with exit code 2 and no state changes.
+3. The exact card is found by the eight-character job suffix in its name (`- draft e6e8d6f8`); zero or several matches defer. The click target is the cover above that text, computed from the OCR line at run time. Nothing is hardcoded and no coordinate is stored. Evidence (screenshot plus OCR JSON and the chosen point) is written under `work/batches/<job-id>/initialization/`, and `--dry-run` stops here.
+4. `scripts/capcut_home_act.ps1` brings the home window forward, re-verifies handle, PID and class, records `begin-opening`, then double-clicks the cover and restores the cursor. It refuses when the window is not in the foreground, the point lies outside it, or the user touched the mouse or keyboard within three seconds.
+5. The run waits up to 60 seconds for the editor window and this project's `.locked` marker, waits ten more seconds for loading, then posts `WM_CLOSE` to the editor window only (its own close control) and waits for the home window to return with the marker gone. A dialog or extra window at any point stops the run without dismissing it; CapCut exiting is reported as a failure.
+6. `returned-home` is recorded through the existing queue, which still requires a newer native modification timestamp and positive media size. Cleanup and upload observation then apply unchanged.
+
+A failed run leaves the request as `opening`, as before. After confirming the editor is closed, `node scripts/capcut_initialization_queue.mjs reset-opening <job-uuid>` returns it to `pending` for another attempt. `initialization.log` in the job directory records every step. The first live run on a workstation should be a `--dry-run` to confirm that the OCR finds the card and that the proposed point lies on its cover; adjust `coverLinesAbove` in `worker/home-screen.mjs` if the layout differs.
+
+Limits: this is desktop input on the signed-in session, so the PC must be unlocked with CapCut visible on a real display; it never dismisses prompts, never touches another project, and cannot verify phone availability.
+
 ## Saved native transitions in batch builds
 
 Before registration, the builder calls capcut_apply_saved_transition with the staged draft and an isolated backup directory. CAPCUT_TRANSITION_SOURCE defaults to CAPCUT_STYLE_SOURCE or work/templates/approved-caption-style; the source must contain an app-saved W lewo resource 6724227717195108867 with an available cache path. CAPCUT_TRANSITION_PLAN is bound to the batch edit-plan.json. Registration uses the edited staged draft, preserving transitions through the native rebuild and all four timeline/upload snapshots. Counts are saved in build/state.json under transitions. Existing completed jobs are not rewritten.

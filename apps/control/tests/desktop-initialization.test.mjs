@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {requestInitialization, pendingInitializations, recordReturnedHome, beginOpening} from '../../../worker/desktop-initialization.mjs';
+import {requestInitialization, pendingInitializations, recordReturnedHome, beginOpening, resetOpening} from '../../../worker/desktop-initialization.mjs';
 
 test('initialization queue preserves exact identity and rejects zero-size, stale or wrong editor attestations', async () => {
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cutroom-initialization-'));
@@ -26,6 +26,13 @@ test('initialization queue preserves exact identity and rejects zero-size, stale
   assert.equal((await beginOpening(root,jobId,options)).status,'opening');
   assert.equal((await pendingInitializations(root,options))[0].status,'opening','Interrupted attempts stay visible');
   await assert.rejects(beginOpening(root,jobId,options),/do not retry/);
+  // An interrupted opening can be reset only while the editor is closed, and only once it is 'opening'.
+  await fs.writeFile(path.join(destination,'.locked'),'');
+  await assert.rejects(resetOpening(root,jobId,options),/still open/);
+  await fs.rm(path.join(destination,'.locked'));
+  assert.equal((await resetOpening(root,jobId,options)).status,'pending');
+  await assert.rejects(resetOpening(root,jobId,options),/Only an interrupted/);
+  assert.equal((await beginOpening(root,jobId,options)).status,'opening');
   await assert.rejects(recordReturnedHome(root,jobId,'wrong',options),/identity/);
   assert.equal((await recordReturnedHome(root,jobId,projectId,options)).status,'returned_home');
   assert.equal((await pendingInitializations(root,options)).length,0);

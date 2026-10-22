@@ -12,10 +12,11 @@ const jobId=path.basename(process.env.VIDEO_JOB_DIRECTORY || '');
 let config={};
 try {config=JSON.parse(await fs.readFile(path.join(root,'worker/config.local.json'),'utf8'));}
 catch(error){if(error.code!=='ENOENT')throw error;}
-if(config.desktopInitialization==='codex') {
+const initialization=['codex','worker'].includes(config.desktopInitialization) ? config.desktopInitialization : null;
+if(initialization) {
  if(!/^[a-f0-9-]{36}$/i.test(jobId))throw new Error('An exact job is required for desktop initialization.');
  await requestInitialization(root,jobId);
- console.log('Desktop initialization queued. Upload cleanup waits for an observed return home.');
+ console.log(`Desktop initialization queued (${initialization}). Upload cleanup waits for an observed return home.`);
 }
 const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH'],{windowsHide:true});
 if(/CapCut\.exe/i.test(stdout))console.log('CapCut is already running; upload remains unverified.');
@@ -47,6 +48,15 @@ else {
     } else await new Promise(resolve=>setTimeout(resolve,1000));
    }
    if(!rule)console.log('No CapCut home window could be attributed to this launch; cleanup will not close it.');
+   // Worker-driven initialization: open this exact draft once in the editor and return home.
+   if(initialization==='worker') {
+    const {spawn}=await import('node:child_process');
+    const code=await new Promise(resolve=>{
+     const child=spawn(process.execPath,[path.join(root,'scripts/initialize_capcut_draft.mjs'),jobId],{cwd:root,stdio:['ignore','inherit','inherit'],windowsHide:true});
+     child.on('error',()=>resolve(-1));child.on('exit',resolve);
+    });
+    console.log(code===0?'Desktop initialization completed.':code===2?'Desktop initialization deferred; run initialize_capcut_draft.mjs later.':'Desktop initialization failed; see initialization.log.');
+   }
   }
  } finally {await client.close();}
 }

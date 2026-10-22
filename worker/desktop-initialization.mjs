@@ -79,6 +79,18 @@ export async function recordReturnedHome(root, jobId, observedProjectId, {draftR
   await save(file, result);
   return result;
 }
+// An interrupted opening stays visible until a person confirms the editor is closed and resets it.
+export async function resetOpening(root, jobId, {draftRoot = nativeDraftRoot, now = Date.now()} = {}) {
+  const file = requestFile(root, jobId);
+  const request = await readInitialization(root, jobId);
+  const {project} = await projectFor(root, jobId, draftRoot);
+  if (!request || !matches(request, project) || request.status !== 'opening') throw new Error('Only an interrupted opening request can be reset.');
+  try { await fs.access(path.join(project.destination, '.locked')); throw new Error('The project is still open in the editor.'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const result = {...request, status: 'pending', resetAt: new Date(now).toISOString(), previousOpeningAt: request.openingAt};
+  await save(file, result);
+  return result;
+}
 export async function pendingInitializations(root, {draftRoot = nativeDraftRoot} = {}) {
   const directory = path.join(root, 'work/desktop-initialization');
   let names;
@@ -86,8 +98,9 @@ export async function pendingInitializations(root, {draftRoot = nativeDraftRoot}
   const pending = [];
   for (const name of names.filter(name => name.endsWith('.json')).sort()) {
     const jobId = name.slice(0, -5);
+    if (!uuid.test(jobId)) continue;
     const request = await readInitialization(root, jobId);
-    if (!['pending', 'opening'].includes(request.status)) continue;
+    if (!request || !['pending', 'opening'].includes(request.status)) continue;
     const {project} = await projectFor(root, jobId, draftRoot);
     if (!matches(request, project)) throw new Error('Pending initialization identity changed.');
     pending.push(request);

@@ -2,6 +2,8 @@
 
 ## Unreleased — 2026-10-22
 
+Worker-driven draft initialization (issue #7): `scripts/initialize_capcut_draft.mjs` opens one exact registered draft on the CapCut home screen by OCR-located card, lets the editor load, closes it to return home and records returned-home, with read-only observation before every guarded action; `desktopInitialization: "worker"` runs it from the upload launcher, and `reset-opening` recovers an interrupted attempt. The first live run is still pending.
+
 Safety hardening from a repository-wide review; no feature changes.
 
 - Draft removal addresses the CapCut draft ID instead of the name, so a namesake draft is never deleted; missing or duplicated IDs refuse.
