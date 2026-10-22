@@ -19,12 +19,27 @@ test('native rebuild replaces the empty upload snapshot with the generated timel
   await write(path.join(template,'Timelines/empty-timeline/template-2.tmp'),empty);
   await write(path.join(source,'draft_content.json'),{duration:1000000,tracks:[{type:'video',segments:[{material_id:'video'}]}],materials:{videos:[{id:'video',path:'fixture.mov'}]}});
   await write(path.join(source,'draft_meta_info.json'),{draft_materials:[]});
-  const result=await rebuild({draftsDir:path.join(root,'drafts'),templateDirectory:template,sourceDirectory:source,name:'Upload fixture',backupDirectory:path.join(root,'backup')});
+  const drafts=path.join(root,'drafts'),rootIndex=path.join(drafts,'root_meta_info.json');
+  await write(rootIndex,{all_draft_store:[{draft_id:'EXISTING',draft_name:'Existing draft'}],draft_ids:1});
+  const before=await fs.readFile(rootIndex,'utf8');
+  // CapCut running at the final check: the folder must be removed and the index untouched.
+  let checks=0;
+  await assert.rejects(rebuild({draftsDir:drafts,templateDirectory:template,sourceDirectory:source,name:'Upload fixture',backupDirectory:path.join(root,'backup'),isClosed:async()=>++checks<2}),/CapCut started/);
+  await assert.rejects(fs.access(path.join(drafts,'Upload fixture')),'Unregistered folder must not remain');
+  assert.equal(await fs.readFile(rootIndex,'utf8'),before,'Index must not change when registration aborts');
+  const result=await rebuild({draftsDir:drafts,templateDirectory:template,sourceDirectory:source,name:'Upload fixture',backupDirectory:path.join(root,'backup'),isClosed:async()=>true});
   const content=await fs.readFile(path.join(result.destination,'draft_content.json'),'utf8');
   assert.equal(await fs.readFile(path.join(result.destination,'template-2.tmp'),'utf8'),content,'Upload snapshot still contains the empty template');
   assert.equal(await fs.readFile(path.join(result.destination,'Timelines',result.timelineId,'draft_content.json'),'utf8'),content);
   const nestedSnapshot=JSON.parse(await fs.readFile(path.join(result.destination,'Timelines',result.timelineId,'template-2.tmp'),'utf8'));
   assert.equal(nestedSnapshot.tracks[0]?.segments.length,1,'Nested upload snapshot still contains the empty template');
   assert.deepEqual(nestedSnapshot,JSON.parse(content));
+  const index=JSON.parse(await fs.readFile(rootIndex,'utf8'));
+  assert.deepEqual(index.all_draft_store.map(d=>d.draft_name),['Upload fixture','Existing draft']);
+  // Each attempt keeps its own index backup that matches the index it replaced.
+  const attempts=await fs.readdir(path.join(root,'backup'));
+  assert.equal(attempts.length,2,'Retry must not overwrite the previous attempt backup');
+  assert.equal(await fs.readFile(path.join(result.backupDirectory,'root_meta_info.before.json'),'utf8'),before);
+  await assert.rejects(rebuild({draftsDir:drafts,templateDirectory:template,sourceDirectory:source,name:'Upload fixture',backupDirectory:path.join(root,'backup'),isClosed:async()=>true}),/Destination exists/);
  } finally {await fs.rm(root,{recursive:true,force:true});}
 });

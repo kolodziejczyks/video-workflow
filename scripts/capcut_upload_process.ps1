@@ -13,5 +13,6 @@ if($Mode -eq 'close') {
  $exited=$requested -and $app.WaitForExit(10000)
  @{closeRequested=$requested;exited=$exited} | ConvertTo-Json -Compress
 } else {
- @{processInfo=@{pid=$app.Id;startedAt=$started;title=$app.MainWindowTitle};lockedProjects=$locked.Count} | ConvertTo-Json -Compress
+ $parent=(Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $app.Id)).ParentProcessId
+ @{processInfo=@{pid=$app.Id;parentPid=[int]$parent;startedAt=$started;title=$app.MainWindowTitle};lockedProjects=$locked.Count} | ConvertTo-Json -Compress
 }

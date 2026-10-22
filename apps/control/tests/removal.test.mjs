@@ -21,9 +21,9 @@ async function fixture(){
 
 test('native removal waits, backs up, verifies deletion and is idempotent; source media remains',async()=>{
   const f=await fixture();let calls=0,checks=0,waits=0;
-  const options={id,projectName:f.name,...f,isClosed:async()=>++checks>1,pause:async()=>{waits++;},deleteProject:async(name,drafts)=>{
-    calls++;assert.equal(name,f.name);assert.equal(drafts,f.drafts);
-    const target=path.resolve(drafts,name);assert.equal(path.dirname(target),path.resolve(f.drafts));
+  const options={id,projectName:f.name,...f,isClosed:async()=>++checks>1,pause:async()=>{waits++;},deleteProject:async(draftId,drafts)=>{
+    calls++;assert.equal(draftId,f.entry.draft_id,'Deletion must address the exact draft ID, never the name');assert.equal(drafts,f.drafts);
+    const target=path.resolve(drafts,f.name);assert.equal(path.dirname(target),path.resolve(f.drafts));
     await fs.rm(target,{recursive:true});await fs.writeFile(f.index,JSON.stringify({all_draft_store:[]}));
   }};
   const result=await removeBatchProject(options);
@@ -41,6 +41,29 @@ test('out-of-root paths and the native template are rejected without deleting an
     await assert.rejects(removeBatchProject({id,projectName:f.name,...f,isClosed:async()=>true,deleteProject:async()=>assert.fail('Must not delete')}),/outside the expected/);
     await fs.access(target);
   }
+});
+
+test('a second draft sharing the same name is never deleted: removal addresses the ID and leaves the namesake',async()=>{
+  const f=await fixture();
+  const namesake=path.join(f.drafts,'namesake-folder');await fs.mkdir(namesake,{recursive:true});await fs.writeFile(path.join(namesake,'draft_content.json'),'{"other":true}');
+  const other={draft_id:'OTHER-ID',draft_name:f.name,draft_fold_path:namesake};
+  await fs.writeFile(f.index,JSON.stringify({all_draft_store:[other,f.entry]}));
+  // Emulate upstream deletion semantics: the first entry matching ID or name is removed, by ID here.
+  const deleteProject=async(nameOrId,drafts)=>{
+    const index=JSON.parse(await fs.readFile(f.index,'utf8'));
+    const item=index.all_draft_store.find(d=>d.draft_id===nameOrId || d.draft_name===nameOrId);
+    assert.equal(item.draft_id,f.entry.draft_id);
+    await fs.rm(item.draft_fold_path,{recursive:true});
+    await fs.writeFile(f.index,JSON.stringify({all_draft_store:index.all_draft_store.filter(d=>d.draft_id!==nameOrId && d.draft_name!==nameOrId)}));
+  };
+  const result=await removeBatchProject({id,projectName:f.name,...f,isClosed:async()=>true,deleteProject});
+  assert.equal(result.status,'removed');
+  assert.equal(await fs.readFile(path.join(namesake,'draft_content.json'),'utf8'),'{"other":true}','The namesake draft folder must survive');
+  await assert.rejects(fs.access(path.join(f.drafts,f.name)));
+  // A missing draft ID or an ID shared by two entries refuses rather than guessing.
+  const g=await fixture();
+  await fs.writeFile(g.index,JSON.stringify({all_draft_store:[g.entry,{...g.entry,draft_fold_path:path.join(g.drafts,'twin')}]}));
+  await assert.rejects(removeBatchProject({id,projectName:g.name,...g,isClosed:async()=>true,deleteProject:async()=>assert.fail('Must not delete')}),/Ambiguous/);
 });
 
 test('already missing native project completes without touching another draft',async()=>{

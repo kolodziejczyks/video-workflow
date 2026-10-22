@@ -27,7 +27,7 @@ node node_modules/typescript/bin/tsc
 
 Do not apply the patch twice. The SDK imports in our scripts require the checkout's installed `node_modules`.
 
-Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs` when launching the server. Our Node entry scripts do this themselves. The patch adds native-template rebuilding, reference-text styling, saved-font application and saved-transition replication. There are 28 tools total. No global MCP registration or restart is required for these stdio scripts.
+Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mjs` when launching the server. Our Node entry scripts do this themselves. The patch adds native-template rebuilding, reference-text styling, saved-font application, saved-transition replication, and makes `capcut_open_app` report the spawned CapCut PID on its last output line. There are 28 tools total. No global MCP registration or restart is required for these stdio scripts. After changing the patch, rebuild `dist` with the `tsc` command above and regenerate the file with `git diff -U0 -- src` from inside the checkout.
 
 ## Current entry points
 
@@ -39,7 +39,7 @@ Set `CAPCUT_NATIVE_HELPER` to the file URL of `scripts/capcut_native_template.mj
 | `analyze_reference_captions.py` | Samples both `copy_` references; expects portable FFmpeg at the path above |
 | `plan_reference_captions.py --font <Montra-font-path>` | Creates caption layout using `work/plans/full.json` and transcripts; always pass Montra, since its default is the old Montserrat fallback |
 | `build_reference_style_project.mjs` | Creates a new isolated MCP project from the caption plan, then wraps it in the native template |
-| `build_reference_style_project.mjs --publish <build-dir>` | Registers a separate new project in the real CapCut store; no internal process guard, so check that CapCut is closed first |
+| `build_reference_style_project.mjs --publish <build-dir>` | Registers a separate new project in the real CapCut store; checks that CapCut is closed before building and again inside the native helper right before the index write |
 | `apply_saved_caption_font.mjs` | Applies the saved Montra descriptor and reflows text in the specific active project; has a process guard and full backup |
 | `apply_saved_transition.mjs` | Copies the app-saved transition to remaining cuts in the active project; preserves existing instances, checks the process and makes a full backup |
 | `capcut_native_template.mjs` | MCP helper module; not a standalone command |

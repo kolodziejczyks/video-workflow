@@ -117,11 +117,16 @@ export async function styleReferenceText({directory,fontPath,highlightedIds}) {
   return {textMaterials:draft.materials.texts.length,highlightedMaterials:highlighted.size};
 }
 async function write(p, value) {
-  const temp = p+'.repair.tmp';
+  const temp = `${p}.${process.pid}.repair.tmp`;
   await fs.writeFile(temp, JSON.stringify(value));
   await fs.rename(temp, p);
 }
-export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, name, backupDirectory }) {
+export async function capcutClosed() {
+  if (process.platform !== 'win32') return true;
+  const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH'],{windowsHide:true});
+  return !/CapCut\.exe/i.test(stdout);
+}
+export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, name, backupDirectory, isClosed = capcutClosed }) {
   if (!name || /[\\/:*?"<>|]/.test(name) || name==='.' || name==='..') throw new Error('Invalid project name');
   const template = path.resolve(templateDirectory);
   const source = path.resolve(sourceDirectory);
@@ -133,10 +138,17 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
   const templateMeta = await load(path.join(template, 'draft_meta_info.json'));
   const projectConfig = await load(path.join(template, 'Timelines/project.json'));
   try { await fs.access(destination); throw new Error('Destination exists'); } catch(e) { if (e.code!=='ENOENT') throw e; }
+  // Every attempt gets its own backup folder so a retry never overwrites the previous index copy.
+  backupDirectory = path.join(backupDirectory, new Date().toISOString().replace(/[:.]/g,'-'));
   await fs.mkdir(backupDirectory, {recursive:true});
   const rootIndex = path.join(draftsDir, 'root_meta_info.json');
   let index;
-  try { index=await load(rootIndex); await fs.copyFile(rootIndex,path.join(backupDirectory,'root_meta_info.before.json')); }
+  try {
+    index=await load(rootIndex);
+    const indexBackup=path.join(backupDirectory,'root_meta_info.before.json');
+    await fs.copyFile(rootIndex,indexBackup,fs.constants.COPYFILE_EXCL);
+    if(!(await fs.readFile(rootIndex)).equals(await fs.readFile(indexBackup))) throw new Error('Index backup does not match the live index');
+  }
   catch(e) { if(e.code!=='ENOENT') throw e; index={all_draft_store:[],draft_ids:0,root_path:draftsDir}; }
   await fs.cp(source,path.join(backupDirectory,'failed-project'),{recursive:true,errorOnExist:true,force:false});
   const projectId = uid(), timelineId = uid(), containerId = uid();
@@ -150,7 +162,11 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
     if (value && typeof value==='object') return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,remap(v)]));
     return value;
   }
+  if (!await isClosed()) throw new Error('CapCut is running; close it before registering a project');
   await fs.cp(template,destination,{recursive:true,errorOnExist:true,force:false,filter:p=>path.basename(p)!=='.locked'});
+  // Nothing below touches the index until the folder is fully verified; any failure removes the unregistered folder.
+  let content, meta;
+  try {
   async function remapJson(dir) {
     for(const entry of await fs.readdir(dir,{withFileTypes:true})) {
       const p=path.join(dir,entry.name);
@@ -164,7 +180,7 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
   await remapJson(destination);
   const oldTimeline=path.join(destination,'Timelines',projectConfig.main_timeline_id);
   await fs.rename(oldTimeline,path.join(destination,'Timelines',timelineId));
-  const content=remap(native);
+  content=remap(native);
   content.id=timelineId; content.name=name; content.duration=generated.duration;
   content.canvas_config=generated.canvas_config; content.fps=generated.fps;
   content.tracks=generated.tracks;
@@ -179,21 +195,29 @@ export async function rebuild({ draftsDir, templateDirectory, sourceDirectory, n
   // the visible timeline is valid.
   await write(path.join(destination,'template-2.tmp'),content);
   await write(path.join(destination,'Timelines',timelineId,'template-2.tmp'),content);
-  const meta=remap(templateMeta);
+  meta=remap(templateMeta);
   meta.draft_id=projectId; meta.draft_name=name;
   meta.draft_root_path=path.resolve(draftsDir); meta.draft_fold_path=destination.replaceAll('\\','/');
   meta.draft_materials=sourceMeta.draft_materials;
   meta.tm_duration=content.duration; meta.tm_draft_create=meta.tm_draft_modified=Date.now()*1000;
   await write(path.join(destination,'draft_meta_info.json'),meta);
-  const entry={...meta,draft_json_file:path.join(destination,'draft_content.json'),draft_root_path:draftsDir.replaceAll('\\','/'),draft_cover:path.join(destination,'draft_cover.jpg')};
-  delete entry.draft_materials;
-  index.all_draft_store.unshift(entry); index.draft_ids=(index.draft_ids||0)+1;
-  await write(rootIndex,index);
   const top=await fs.readFile(path.join(destination,'draft_content.json'));
   const timeline=await fs.readFile(path.join(destination,'Timelines',timelineId,'draft_content.json'));
   if(!top.equals(timeline)) throw new Error('Top-level and timeline drafts differ');
   if(!top.equals(await fs.readFile(path.join(destination,'template-2.tmp')))) throw new Error('Upload snapshot differs from timeline');
   if(!top.equals(await fs.readFile(path.join(destination,'Timelines',timelineId,'template-2.tmp')))) throw new Error('Nested upload snapshot differs from timeline');
+  const entry={...meta,draft_json_file:path.join(destination,'draft_content.json'),draft_root_path:draftsDir.replaceAll('\\','/'),draft_cover:path.join(destination,'draft_cover.jpg')};
+  delete entry.draft_materials;
+  // Re-read the index and re-check CapCut immediately before the only write that makes the project visible.
+  if (!await isClosed()) throw new Error('CapCut started during the build; the unregistered folder was removed. Close it and retry');
+  try { index=await load(rootIndex); } catch(e) { if(e.code!=='ENOENT') throw e; }
+  if (index.all_draft_store.some(d=>d.draft_name===name || d.draft_id===projectId)) throw new Error('A project with this name was registered meanwhile');
+  index.all_draft_store.unshift(entry); index.draft_ids=(index.draft_ids||0)+1;
+  await write(rootIndex,index);
+  } catch(error) {
+    await fs.rm(destination,{recursive:true,force:true}).catch(()=>{});
+    throw error;
+  }
   return {name,destination,projectId,timelineId,durationSeconds:content.duration/1e6,
     clips:content.tracks.flatMap(t=>t.segments).length,newVersion:content.new_version,
     appVersion:content.platform.app_version,timelineCopiesMatch:true,backupDirectory};

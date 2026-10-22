@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInbox, stableBatches } from './inventory.mjs';
-import {reconnect, temporaryConnectionFailure} from './reconnect.mjs';
+import {reconnect, temporaryConnectionFailure, shouldStopProcessing} from './reconnect.mjs';
 import {observeJobUpload} from './upload-observer.mjs';
 import {uploadThumbnails} from './thumbnails.mjs';
 
@@ -23,7 +23,7 @@ const lockPath = path.join(work, 'worker.lock');
 let lock;
 try { lock = await fs.open(lockPath, 'wx'); } catch { throw new Error('A worker lock exists. Check the running process before removing work/batches/worker.lock.'); }
 await lock.writeFile(String(process.pid));
-let stopped = false, child, current = null, seen = new Map(), inventory = [], busy = false, finalizing = false;
+let stopped = false, child, current = null, seen = new Map(), inventory = [], busy = false, finalizing = false, lastRenewal = 0;
 let tickPromise = Promise.resolve();
 function stopProcessor() {
   if (!child?.pid) return;
@@ -47,12 +47,20 @@ async function api(route, input, options = {}) {
 }
 async function update(stage, message = '', projectName) {
   await api(`/api/worker/jobs/${current.id}`, { leaseToken: current.lease_token, stage, message, projectName });
+  lastRenewal = Date.now();
   current.stage = stage; current.message = message;
 }
 async function tick() {
-  const scan = stableBatches(seen, await scanInbox(config.inbox), Date.now());
-  seen = scan.seen; inventory = scan.ready;
-  const heartbeat=await api('/api/worker/heartbeat', { batches: inventory.map(({ sources,...batch }) => batch), message: current ? 'Processing a recording batch.' : 'Ready for a recording batch.' });
+  // An unavailable inbox (Drive not mounted yet) must never end the worker or an active job.
+  let inboxMessage = 'Ready for a recording batch.';
+  try {
+    const scan = stableBatches(seen, await scanInbox(config.inbox), Date.now());
+    seen = scan.seen; inventory = scan.ready;
+  } catch (error) {
+    console.error(`Recording inbox unavailable (${error.code || error.message}); advertising no batches until it returns.`);
+    seen = new Map(); inventory = []; inboxMessage = 'Waiting for the recording inbox to become available on the PC.';
+  }
+  const heartbeat=await api('/api/worker/heartbeat', { batches: inventory.map(({ sources,...batch }) => batch), message: current ? 'Processing a recording batch.' : inboxMessage });
   if (current && !finalizing) {
     let progress;
     try { progress=JSON.parse(await fs.readFile(path.join(work,current.id,'progress.json'),'utf8')); } catch(e) { if(e.code!=='ENOENT')throw e; }
@@ -90,6 +98,7 @@ async function runProcessor(command,args,directory,logName){
 }
 async function execute(job) {
   current = { ...job, stage: 'preparing' };
+  lastRenewal = Date.now();
   try {
     if(job.phase==='delete'){
       const directory=path.join(work,job.id);await fs.mkdir(directory,{recursive:true});
@@ -161,7 +170,15 @@ try {
   const timer = setInterval(() => {
     if (busy || stopped) return;
     busy = true;
-    tickPromise = tick().catch(error => { console.error(error.message); if (!current && temporaryConnectionFailure(error)) return; stopProcessor(); stopped = true; }).finally(() => { busy = false; });
+    tickPromise = tick().catch(error => {
+      console.error(error.message);
+      if (!current) { if (!temporaryConnectionFailure(error)) stopped = true; return; }
+      // One failed renewal does not lose a 90-second lease; killing the processor mid-registration is the greater risk.
+      const reason = shouldStopProcessing(error, {lastRenewal});
+      if (!reason) { console.error('Lease still valid; processing continues while the control connection recovers.'); return; }
+      console.error(`${reason}; stopping the local processor to protect the job lease.`);
+      stopProcessor(); stopped = true;
+    }).finally(() => { busy = false; });
   }, 20000);
   try {
     const retryOptions = {pause:delay, report:message=>console.error(message), stopped:()=>stopped};

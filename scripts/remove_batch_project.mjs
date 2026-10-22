@@ -10,11 +10,12 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const nativeRoot='C:/Users/bezaw/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft';
 async function optional(file){try{return JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}}
 async function capcutClosed(){const {stdout}=await promisify(execFile)('C:/Windows/System32/tasklist.exe',['/FI','IMAGENAME eq CapCut.exe','/NH']);return !/CapCut\.exe/i.test(stdout);}
-async function deleteThroughMcp(name,drafts){
+// Delete by draft ID only: upstream matches names first and strips every index entry with that name.
+async function deleteThroughMcp(draftId,drafts){
   const client=new Client({name:'cutroom-remove-project',version:'1.0.0'});
   try{
     await client.connect(new StdioClientTransport({command:process.execPath,args:[path.join(root,'work/aiperson-capcut-mcp/dist/src/index.js')],env:{...process.env,CAPCUT_DRAFTS_PATH:drafts},stderr:'pipe'}));
-    const result=await client.callTool({name:'capcut_delete_project',arguments:{project_name_or_id:name,confirm:true}});
+    const result=await client.callTool({name:'capcut_delete_project',arguments:{project_name_or_id:draftId,confirm:true}});
     if(result.isError)throw new Error('CapCut MCP could not remove this draft. Check the local removal log.');
   }finally{await client.close();}
 }
@@ -45,6 +46,8 @@ export async function removeBatchProject({id,projectName='',workspace=root,draft
   let backupDirectory=null;
   if(matches.length){
     const entry=matches[0],target=path.resolve(entry.draft_fold_path || path.join(drafts,entry.draft_name));
+    if(!/^[A-Za-z0-9-]+$/.test(entry.draft_id || ''))throw new Error('CapCut project has no usable draft ID; nothing removed.');
+    if(index.all_draft_store.some(d=>d!==entry && (d.draft_id===entry.draft_id || path.resolve(d.draft_fold_path||'')===target)))throw new Error('Another CapCut entry shares this draft ID or folder; nothing removed.');
     const resolvedRoot=await fs.realpath(drafts),resolvedTarget=await fs.realpath(target);
     if(path.dirname(target)!==path.resolve(drafts) || path.dirname(resolvedTarget)!==resolvedRoot || (await fs.lstat(target)).isSymbolicLink() || ['1019','Polish Caption Style 2026-10-19T20-23-27-855Z'].includes(entry.draft_name))throw new Error('Removal target is outside the expected generated-project directory.');
     backupDirectory=path.join(workspace,'work','removed-projects',id,new Date().toISOString().replace(/[:.]/g,'-'));
@@ -54,7 +57,7 @@ export async function removeBatchProject({id,projectName='',workspace=root,draft
     await fs.writeFile(path.join(backupDirectory,'identity.json'),JSON.stringify({jobId:id,projectName:entry.draft_name,projectId:entry.draft_id}));
     if(!await isClosed())throw new Error('CapCut opened during backup. Close it and retry removal; no project was changed.');
     await progress('preparing','Backup saved. Removing the CapCut draft through MCP.');
-    await deleteProject(entry.draft_name,drafts);
+    await deleteProject(entry.draft_id,drafts);
     const after=JSON.parse(await fs.readFile(indexPath,'utf8'));
     if(after.all_draft_store.some(d=>d.draft_id===entry.draft_id || path.resolve(d.draft_fold_path||'')===target))throw new Error('Project remains in the CapCut index.');
     try{await fs.access(target);throw new Error('Project directory still exists.');}catch(e){if(e.code!=='ENOENT')throw e;}

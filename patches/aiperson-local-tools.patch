@@ -1,8 +1,23 @@
+diff --git a/src/capcut/app-launcher.ts b/src/capcut/app-launcher.ts
+index 064f4ba..bd039f3 100644
+--- a/src/capcut/app-launcher.ts
++++ b/src/capcut/app-launcher.ts
+@@ -8 +8 @@ export class AppLauncher {
+-  public static async launchCapCut(): Promise<{ success: boolean; message: string }> {
++  public static async launchCapCut(): Promise<{ success: boolean; message: string; pid?: number }> {
+@@ -19 +19,2 @@ export class AppLauncher {
+-        message: `Launched CapCut executable from: ${exePath}`
++        message: `Launched CapCut executable from: ${exePath}`,
++        pid: child.pid
 diff --git a/src/index.ts b/src/index.ts
-index 7afd711..afb2d57 100644
+index 7afd711..93739d5 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -854,0 +855,33 @@ server.prompt(
+@@ -444 +444,2 @@ server.tool(
+-          content: [{ type: 'text', text: result.message }]
++          // Local extension: report the spawned PID so a launcher can correlate ownership of the new instance.
++          content: [{ type: 'text', text: result.pid ? `${result.message}\n${JSON.stringify({ pid: result.pid })}` : result.message }]
+@@ -854,0 +856,33 @@ server.prompt(
 +server.tool('capcut_use_saved_font', 'Apply the font saved on one caption to the remaining captions, backing up the project and synchronizing its native timeline.',
 + {directory:z.string(),font_path:z.string(),layout_path:z.string(),backup_directory:z.string()},
 + async ({directory,font_path,layout_path,backup_directory})=>{
@@ -36,7 +51,7 @@ index 7afd711..afb2d57 100644
 +    } catch(e) {return {isError:true,content:[{type:'text' as const,text:String(e)}]};}
 +  });
 +
-@@ -855,0 +889,9 @@ async function main() {
+@@ -855,0 +890,9 @@ async function main() {
 +  server.tool('capcut_apply_saved_transition', 'Copy an app-saved native transition to every remaining cut, preserving existing transitions and backing up the project.',
 +   {directory:z.string(),backup_directory:z.string()},async ({directory,backup_directory})=>{
 +    try {
