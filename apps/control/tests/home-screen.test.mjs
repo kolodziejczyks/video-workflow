@@ -32,8 +32,8 @@ test('the exact card is found by its unique job suffix and the click lands on th
   const card=findDraftCard(lines,job);
   assert.equal(card.found,true);
   assert.equal(card.line.text,lines[3].text);
-  assert.deepEqual(card.target,{x:1010,y:816});
-  assert.deepEqual(toScreen({left:10,top:20},card.target),{x:1020,y:836});
+  assert.deepEqual(card.target,{x:1010,y:804});
+  assert.deepEqual(toScreen({left:10,top:20},card.target),{x:1020,y:824});
   assert.match(findDraftCard(lines,{...job,jobId:'149a86ea-0000-4000-8000-000000000000'}).reason,/No card text/);
   assert.match(findDraftCard([...lines,{text:'copy - draft e6e8d6f8',x:1300,y:900,w:300,h:24}],job).reason,/Ambiguous/);
   assert.match(findDraftCard([{text:'draft e6e8d6f8',x:5,y:10,w:200,h:24}],job).reason,/above the window/);

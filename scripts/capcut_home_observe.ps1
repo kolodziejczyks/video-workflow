@@ -80,10 +80,10 @@ function Recognize-Text($path) {
     $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
     $stream.Dispose()
     $lines = foreach ($line in $result.Lines) {
-        $words = @($line.Words | ForEach-Object { [pscustomobject]@{ text = $_.Text; x = [int]$_.BoundingRect.X; y = [int]$_.BoundingRect.Y; w = [int]$_.BoundingRect.Width; h = [int]$_.BoundingRect.Height } })
+        $words = @($line.Words | ForEach-Object { [pscustomobject]@{ text = ($_.Text -replace '[\x00-\x1f\x7f-\x9f]', ''); x = [int]$_.BoundingRect.X; y = [int]$_.BoundingRect.Y; w = [int]$_.BoundingRect.Width; h = [int]$_.BoundingRect.Height } })
         $x0 = ($words | Measure-Object x -Minimum).Minimum; $y0 = ($words | Measure-Object y -Minimum).Minimum
         $x1 = ($words | ForEach-Object { $_.x + $_.w } | Measure-Object -Maximum).Maximum; $y1 = ($words | ForEach-Object { $_.y + $_.h } | Measure-Object -Maximum).Maximum
-        [pscustomobject]@{ text = $line.Text; x = [int]$x0; y = [int]$y0; w = [int]($x1 - $x0); h = [int]($y1 - $y0); words = $words }
+        [pscustomobject]@{ text = ($line.Text -replace '[\x00-\x1f\x7f-\x9f]', ''); x = [int]$x0; y = [int]$y0; w = [int]($x1 - $x0); h = [int]($y1 - $y0); words = $words }
     }
     return @($lines)
 }

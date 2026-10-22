@@ -29,7 +29,9 @@ const fold = text => (text || '').normalize('NFD').replace(/\p{M}/gu, '').toLowe
 
 // Locate the exact card by the eight-character job suffix that every batch project name carries.
 // The suffix is unique per job, survives OCR better than punctuation, and distinguishes versions.
-export function findDraftCard(lines, {projectName, jobId}, {coverLinesAbove = 3.5} = {}) {
+// Observed layout (CapCut 9.6 home, 2026-10-22): a square cover about ten text heights tall sits
+// directly above the name line, so four text heights above the name lands in its lower middle.
+export function findDraftCard(lines, {projectName, jobId}, {coverLinesAbove = 4} = {}) {
   const suffix = jobId.slice(0, 8).toLowerCase();
   const expected = fold(projectName);
   const matches = (lines || []).filter(line => {

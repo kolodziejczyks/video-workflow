@@ -37,7 +37,10 @@ async function observe(imagePath) {
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts/capcut_home_observe.ps1')];
   if (imagePath) args.push('-ImagePath', imagePath);
   const {stdout} = await run(powershell, args, {windowsHide: true, timeout: 60000, maxBuffer: 16 * 1024 * 1024});
-  const report = JSON.parse(stdout);
+  // PowerShell 5.1 leaves rare control characters from OCR text unescaped; the report is one line, so drop them all.
+  let report;
+  try { report = JSON.parse(stdout.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')); }
+  catch (error) { await fs.mkdir(evidence, {recursive: true}); await fs.writeFile(path.join(evidence, `observe-${stamp()}.txt`), stdout); throw error; }
   report.windows = asArray(report.windows);
   report.lines = asArray(report.lines).map(line => ({...line, words: asArray(line.words)}));
   return report;
