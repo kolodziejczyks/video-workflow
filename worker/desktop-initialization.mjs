@@ -101,7 +101,13 @@ export async function pendingInitializations(root, {draftRoot = nativeDraftRoot}
     if (!uuid.test(jobId)) continue;
     const request = await readInitialization(root, jobId);
     if (!request || !['pending', 'opening'].includes(request.status)) continue;
-    const {project} = await projectFor(root, jobId, draftRoot);
+    let project;
+    try { ({project} = await projectFor(root, jobId, draftRoot)); }
+    catch (error) {
+      // A draft removed after its request was queued is no longer pending; keep the file as history.
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
     if (!matches(request, project)) throw new Error('Pending initialization identity changed.');
     pending.push(request);
   }
