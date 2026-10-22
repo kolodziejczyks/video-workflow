@@ -5,6 +5,8 @@ param(
 # given, capture the largest non-minimized CapCut window and OCR it with Windows' built-in engine.
 # No input is sent and no window state is changed.
 $ErrorActionPreference = 'Stop'
+# Emit UTF-8: the OEM console code page best-fits characters such as the middle dot into control bytes.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes

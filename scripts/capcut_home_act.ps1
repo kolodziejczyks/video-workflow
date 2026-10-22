@@ -13,6 +13,7 @@ param(
 # double-click injects two left clicks at a point inside the verified foreground window and
 # restores the cursor; close-window posts WM_CLOSE (the window's own close control), never a kill.
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
